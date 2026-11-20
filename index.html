@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Apunta gastos con la voz y mira cómo vas con tus presupuestos.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Cuentas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Cuentas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+  <div id="bannerDemo" class="banner" hidden>
+    <span>Modo demo · estos datos no van a tu hoja</span>
+    <button class="enlace" type="button" data-abrir="panelAjustes">Conectar</button>
+  </div>
+
+  <header class="cabecera">
+    <button class="cab-info" type="button" data-abrir-presupuestos aria-label="Ver cómo vamos este mes">
+      <span class="cab-mes" id="cabMes">Cuentas</span>
+      <span class="cab-resumen" id="cabResumen">&nbsp;</span>
+      <span class="mini-barra"><span id="cabBarra"></span></span>
+    </button>
+    <span id="badgeCola" class="badge" hidden></span>
+    <button class="icono-btn" type="button" data-abrir="panelAjustes" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+
+  <main class="principal">
+    <p class="ayuda" id="ayuda">Toca el micro y di algo como<br><strong>«50 € en gasolina»</strong></p>
+
+    <div class="micro-zona">
+      <button id="btnMicro" class="micro" type="button" aria-label="Dictar un gasto">
+        <span class="onda"></span><span class="onda o2"></span>
+        <svg class="ico-micro" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M8.5 21h7"/></svg>
+        <svg class="ico-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5"/></svg>
+        <span class="giro" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <p id="transcripcion" class="transcripcion" aria-live="polite"></p>
+    <section id="tarjeta" class="tarjeta" hidden aria-live="polite"></section>
+
+    <form id="formTexto" class="form-texto" hidden>
+      <input id="entradaTexto" type="text" autocomplete="off" autocapitalize="sentences" enterkeyhint="send"
+             placeholder="50 € en gasolina" aria-label="Escribe el gasto">
+      <button type="submit" class="btn-primario">Apuntar</button>
+    </form>
+    <button id="btnEscribir" class="enlace escribir" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8"/></svg>
+      o escríbelo
+    </button>
+  </main>
+
+  <footer class="pie">
+    <button id="btnPresupuestos" class="btn-presupuestos" type="button" data-abrir-presupuestos>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>¿Cómo vamos este mes?</span>
+    </button>
+  </footer>
+</div>
+
+<div id="panelPresupuestos" class="panel" hidden role="dialog" aria-modal="true" aria-labelledby="tituloPres">
+  <div class="panel-cab">
+    <h2 id="tituloPres">Este mes</h2>
+    <button id="btnRepetirVoz" class="icono-btn" type="button" aria-label="Volver a escuchar el resumen">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+    </button>
+    <button class="icono-btn" type="button" data-cerrar aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="panel-cuerpo" id="cuerpoPres"></div>
+</div>
+
+<div id="panelAjustes" class="panel" hidden role="dialog" aria-modal="true" aria-labelledby="tituloAjustes">
+  <div class="panel-cab">
+    <h2 id="tituloAjustes">Ajustes</h2>
+    <button class="icono-btn" type="button" data-cerrar aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="panel-cuerpo">
+    <div id="estadoConexion" class="estado-conexion"></div>
+
+    <div class="grupo">
+      <label for="enlaceConexion" class="etiqueta">Enlace de conexión</label>
+      <p class="nota">Sale en tu hoja de Google: menú <b>💰 Cuentas → Conectar el móvil</b>. Escanea el QR, o copia el enlace y pégalo aquí.</p>
+      <textarea id="enlaceConexion" rows="3" placeholder="https://…#api=…&amp;k=…" spellcheck="false"></textarea>
+      <button id="btnConectar" class="btn-primario" type="button">Conectar</button>
+    </div>
+
+    <div class="grupo">
+      <label class="interruptor"><input type="checkbox" id="optVoz"><span class="pista"></span><span>Leer en voz alta cómo vamos</span></label>
+      <label class="interruptor"><input type="checkbox" id="optVozApunte"><span class="pista"></span><span>Confirmar en voz alta cada apunte</span></label>
+    </div>
+
+    <div class="grupo fila-botones">
+      <button id="btnProbar" class="btn-sec" type="button">Probar conexión</button>
+      <button id="btnDesconectar" class="btn-sec peligro" type="button">Desconectar</button>
+    </div>
+
+    <p class="nota">Presupuestos, categorías y palabras clave se cambian desde el ordenador, en la pestaña <b>Presupuestos</b> de la hoja.</p>
+    <p class="nota version">Cuentas · v1</p>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="parser.js"></script>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
