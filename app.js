@@ -80,10 +80,10 @@
   function categoriasCache() {
     const r = resumenCache();
     if (!r || !r.categorias) return CATEGORIAS_POR_DEFECTO;
-    // El caché no trae palabras clave: combinamos con las de serie para el modo sin conexión.
-    return r.categorias.map((c) => {
+    // Las palabras clave vienen de la hoja; si un resumen antiguo no las trae, usamos las de serie.
+    return r.categorias.filter((c) => !c.huerfana).map((c) => {
       const serie = CATEGORIAS_POR_DEFECTO.find((d) => d.nombre === c.nombre);
-      return { nombre: c.nombre, presupuesto: c.presupuesto, palabras: serie ? serie.palabras : [] };
+      return { nombre: c.nombre, presupuesto: c.presupuesto, palabras: c.palabras || (serie ? serie.palabras : []) };
     });
   }
 
@@ -185,6 +185,10 @@
     if (pasadas.length) t += 'Te has pasado en ' + listaHablada(pasadas.map((c) => `${c.nombre}, por ${eurosHablados(c.gastado - c.presupuesto)}`)) + '. ';
     if (ojo.length) t += 'Ojo con ' + listaHablada(ojo.map((c) => `${c.nombre}, que llevas el ${Math.round(pct(c.gastado, c.presupuesto) * 100)} por ciento`)) + '. ';
     if (!pasadas.length && !ojo.length) t += 'En lo demás, vas bien.';
+    const sinClasificar = r.categorias.filter((c) => c.huerfana && c.gastado > 0);
+    if (sinClasificar.length) {
+      t += ' Tienes ' + listaHablada(sinClasificar.map((c) => `${eurosHablados(c.gastado)} en ${c.nombre}`)) + ', sin presupuesto.';
+    }
     return t.trim();
   }
 
@@ -465,7 +469,7 @@
       const e = estadoCategoria(c, ritmo);
       let nota;
       if (e === 'pasado') nota = `Te has pasado ${eur(c.gastado - c.presupuesto)}`;
-      else if (e === 'sin') nota = 'Sin presupuesto';
+      else if (e === 'sin') nota = c.huerfana ? 'Sin presupuesto · cámbialos de categoría en la hoja' : 'Sin presupuesto';
       else if (e === 'vacio') nota = 'Sin presupuesto ni gastos';
       else if (e === 'agotado') nota = 'Presupuesto agotado';
       else nota = `Quedan ${eur(c.presupuesto - c.gastado)}` + (e === 'ojo' ? ' · vas rápido' : '');

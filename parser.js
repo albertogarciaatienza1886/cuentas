@@ -182,10 +182,15 @@ function extraerImporte(toks) {
   return null;
 }
 
+// Palabras del nombre de una categoría que NO sirven como clave («Gastos fijos» no debe atrapar «gastos de envío»).
+var PALABRAS_GENERICAS = ['gasto', 'gastos', 'vida', 'otros', 'otras', 'varios', 'varias', 'cosas', 'general', 'compras'];
+
 function clavesDeCategoria(c) {
   var claves = (c.palabras || []).slice();
   claves.push(c.nombre);
-  normalizar(c.nombre).split(/\s+/).forEach(function (p) { if (p.length >= 4) claves.push(p); });
+  normalizar(c.nombre).split(/[^a-z0-9]+/).forEach(function (p) {
+    if (p.length >= 4 && !contiene(PALABRAS_GENERICAS, p)) claves.push(p);
+  });
   return claves;
 }
 
