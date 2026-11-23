@@ -111,7 +111,7 @@ function fusionarNumerosEnPalabras(toks) {
     if (esUnSuelto) { salida.push(toks[i]); i++; continue; }
     var trozo = toks.slice(i, j);
     var valor = total + actual;
-    salida.push({ o: trozo.map(function (t) { return t.o; }).join(' '), n: String(valor), num: valor });
+    salida.push({ o: trozo.map(function (t) { return t.o; }).join(' '), n: String(valor), num: valor, palabra: true });
     i = j;
   }
   return salida;
@@ -121,21 +121,37 @@ function fusionarNumerosEnPalabras(toks) {
 function extraerImporte(toks) {
   function num(i) { return i >= 0 && i < toks.length ? toks[i].num : null; }
   function es(i, lista) { return i >= 0 && i < toks.length && contiene(lista, toks[i].n); }
-  function centimos(i, usados) { // "... con 50 (céntimos)"
-    if (es(i, ['con', 'y']) && num(i + 1) !== null && num(i + 1) < 100 && Math.floor(num(i + 1)) === num(i + 1)) {
+  function entero(j) { var v = num(j); return v !== null && v < 100 && Math.floor(v) === v; }
+  function enPalabras(j) { return j >= 0 && j < toks.length && toks[j].palabra === true; }
+  // Céntimos tras los euros: "con 50", "y cincuenta" o, pegados, "cincuenta" / "50" (dos cifras).
+  // estricto: pegados solo si van en palabras ("doce cincuenta"), para no confundir "20 3 cafés".
+  function centimos(i, usados, estricto) {
+    if (es(i, ['con', 'y']) && entero(i + 1)) {
       usados[i] = usados[i + 1] = true;
       if (es(i + 2, CENTIMOS)) usados[i + 2] = true;
       return num(i + 1) / 100;
     }
+    if (entero(i) && (enPalabras(i) || (!estricto && num(i) >= 10))) {
+      usados[i] = true;
+      if (es(i + 1, CENTIMOS)) usados[i + 1] = true;
+      return num(i) / 100;
+    }
     return 0;
   }
   var i, usados;
-  // 1) número + moneda: "50 €", "12 euros con 50", "50 céntimos"
+  // 0) "doce cincuenta euros" (dos números en palabras + moneda) = 12,50 €
+  for (i = 0; i < toks.length; i++) {
+    if (enPalabras(i) && enPalabras(i + 1) && entero(i + 1) && es(i + 2, MONEDAS)) {
+      usados = {}; usados[i] = usados[i + 1] = usados[i + 2] = true;
+      return { valor: num(i) + num(i + 1) / 100, usados: usados };
+    }
+  }
+  // 1) número + moneda: "50 €", "12 euros con 50", "15 euros cincuenta", "50 céntimos"
   for (i = 0; i < toks.length; i++) {
     if (num(i) === null) continue;
     if (es(i + 1, MONEDAS)) {
       usados = {}; usados[i] = usados[i + 1] = true;
-      return { valor: num(i) + centimos(i + 2, usados), usados: usados };
+      return { valor: num(i) + centimos(i + 2, usados, false), usados: usados };
     }
     if (es(i + 1, CENTIMOS)) {
       usados = {}; usados[i] = usados[i + 1] = true;
@@ -160,7 +176,7 @@ function extraerImporte(toks) {
   for (i = 0; i < toks.length; i++) {
     if (num(i) !== null) {
       usados = {}; usados[i] = true;
-      return { valor: num(i) + centimos(i + 1, usados), usados: usados };
+      return { valor: num(i) + centimos(i + 1, usados, true), usados: usados };
     }
   }
   return null;
