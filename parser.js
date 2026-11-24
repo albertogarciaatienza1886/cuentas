@@ -211,6 +211,15 @@ function buscarCategoria(textoNorm, categorias) {
   return mejor;
 }
 
+/**
+ * Categoría para lo que no encaja con ninguna palabra clave: la de la hoja cuyo nombre empieza por
+ * «Otros» (p. ej. «Otros (Imprevistos)»); si no hay ninguna, «Otros» sin presupuesto.
+ */
+function categoriaResto(categorias) {
+  var resto = (categorias || []).filter(function (c) { return /^otros\b/.test(normalizar(String(c.nombre).trim())); })[0];
+  return resto ? resto.nombre : CATEGORIA_OTROS;
+}
+
 function fechaIsoLocal(d) {
   function dos(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + '-' + dos(d.getMonth() + 1) + '-' + dos(d.getDate());
@@ -300,7 +309,7 @@ function interpretarFrase(texto, opciones) {
 
   var normSinImporte = toks.filter(function (t, idx) { return !usados[idx]; })
     .map(function (t) { return t.n; }).join(' ');
-  var categoria = esIngreso ? CATEGORIA_INGRESOS : (buscarCategoria(normSinImporte, categorias) || CATEGORIA_OTROS);
+  var categoria = esIngreso ? CATEGORIA_INGRESOS : (buscarCategoria(normSinImporte, categorias) || categoriaResto(categorias));
 
   var resto = toks.filter(function (t, idx) { return !usados[idx]; });
   while (resto.length && contiene(RELLENO_INICIO, resto[0].n)) resto.shift();
@@ -328,6 +337,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizar: normalizar,
     convertirNumero: convertirNumero,
     buscarCategoria: buscarCategoria,
+    categoriaResto: categoriaResto,
     saldoAcumulado: saldoAcumulado,
     mesSiguiente: mesSiguiente,
     CATEGORIAS_POR_DEFECTO: CATEGORIAS_POR_DEFECTO,
