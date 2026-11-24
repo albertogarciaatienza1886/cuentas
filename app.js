@@ -35,7 +35,10 @@
     deshacer: '<svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
     etiqueta: '<svg viewBox="0 0 24 24"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><path d="M7.5 7.5h.01"/></svg>',
     micro: '<svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
-    lapiz: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'
+    lapiz: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+    papelera: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
+    flecha: '<svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+    ciclo: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>'
   };
 
   /* ───────── Avisos ───────── */
@@ -172,19 +175,36 @@
   }
   const listaHablada = (xs) => (xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1]);
 
+  /** Lo que sobra en las categorías acumulativas y pasará al mes siguiente. */
+  const sobranteAcumulable = (r) => r.categorias.filter((c) => c.acumula)
+    .reduce((s, c) => s + Math.max(0, c.presupuesto - c.gastado), 0);
+  const acumuladoTotal = (r) => r.categorias.reduce((s, c) => s + (c.acumulado || 0), 0);
+
   function textoHablado(r) {
     const ritmo = r.dia / r.diasMes;
     const quedan = r.total.presupuesto - r.total.gastado;
     const dias = r.diasMes - r.dia + 1;
-    let t = `Llevas ${eurosHablados(r.total.gastado)} de ${eurosHablados(r.total.presupuesto)} este mes. `;
-    t += quedan >= 0
-      ? `Te quedan ${eurosHablados(quedan)} para ${dias === 1 ? 'hoy' : dias + ' días'}. `
-      : `Te has pasado del total en ${eurosHablados(quedan)}. `;
     const pasadas = r.categorias.filter((c) => estadoCategoria(c, ritmo) === 'pasado');
-    const ojo = r.categorias.filter((c) => estadoCategoria(c, ritmo) === 'ojo');
-    if (pasadas.length) t += 'Te has pasado en ' + listaHablada(pasadas.map((c) => `${c.nombre}, por ${eurosHablados(c.gastado - c.presupuesto)}`)) + '. ';
-    if (ojo.length) t += 'Ojo con ' + listaHablada(ojo.map((c) => `${c.nombre}, que llevas el ${Math.round(pct(c.gastado, c.presupuesto) * 100)} por ciento`)) + '. ';
-    if (!pasadas.length && !ojo.length) t += 'En lo demás, vas bien.';
+    const ojo = r.cerrado ? [] : r.categorias.filter((c) => estadoCategoria(c, ritmo) === 'ojo');
+    const porCategoria = (c) => `${c.nombre}, por ${eurosHablados(c.gastado - c.presupuesto)}`;
+    let t;
+    if (r.cerrado) {
+      t = `En ${r.mesNombre} gastaste ${eurosHablados(r.total.gastado)} de ${eurosHablados(r.total.presupuesto)}. `;
+      t += quedan >= 0 ? `Te sobraron ${eurosHablados(quedan)}. ` : `En total te pasaste ${eurosHablados(quedan)}. `;
+      if (pasadas.length) t += 'Te pasaste en ' + listaHablada(pasadas.map(porCategoria)) + '. ';
+      const pasan = sobranteAcumulable(r);
+      if (pasan > 0) t += `Pasaron al mes siguiente ${eurosHablados(pasan)} acumulados. `;
+    } else {
+      t = `Llevas ${eurosHablados(r.total.gastado)} de ${eurosHablados(r.total.presupuesto)} este mes. `;
+      t += quedan >= 0
+        ? `Te quedan ${eurosHablados(quedan)} para ${dias === 1 ? 'hoy' : dias + ' días'}. `
+        : `Te has pasado del total en ${eurosHablados(quedan)}. `;
+      if (pasadas.length) t += 'Te has pasado en ' + listaHablada(pasadas.map(porCategoria)) + '. ';
+      if (ojo.length) t += 'Ojo con ' + listaHablada(ojo.map((c) => `${c.nombre}, que llevas el ${Math.round(pct(c.gastado, c.presupuesto) * 100)} por ciento`)) + '. ';
+      if (!pasadas.length && !ojo.length) t += 'Vas bien en todas las categorías. ';
+      const acum = acumuladoTotal(r);
+      if (acum > 0) t += `Incluye ${eurosHablados(acum)} que te sobraron de meses anteriores.`;
+    }
     const sinClasificar = r.categorias.filter((c) => c.huerfana && c.gastado > 0);
     if (sinClasificar.length) {
       t += ' Tienes ' + listaHablada(sinClasificar.map((c) => `${eurosHablados(c.gastado)} en ${c.nombre}`)) + ', sin presupuesto.';
@@ -425,39 +445,104 @@
   window.addEventListener('popstate', () => { if (panelAbierto) cerrarPanel(true); });
 
   let ultimoResumenHablado = null;
+  let vista = null;            // resumen que se ve ahora en el panel
+  let mesMostrado = '';        // "yyyy-mm" pedido (aunque aún no haya llegado)
+  let moviendo = null;         // id del apunte con el selector de categoría abierto
+  const abiertas = new Set();  // categorías desplegadas
+
+  const mesActualIso = () => hoy().slice(0, 7);
+  const dos = (n) => (n < 10 ? '0' : '') + n;
+  function mesAnterior(m) { const [y, mm] = m.split('-').map(Number); return mm === 1 ? `${y - 1}-12` : `${y}-${dos(mm - 1)}`; }
+  function nombreMes(m) { const [y, mm] = m.split('-').map(Number); return new Date(y, mm - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }); }
+
   async function abrirPresupuestos() {
     desbloquearVoz();
     abrirPanel('panelPresupuestos');
-    const cache = resumenCache();
+    abiertas.clear();
+    moviendo = null;
+    await cargarMes(mesActualIso(), true);
+  }
+
+  async function cargarMes(mes, conVoz) {
+    mesMostrado = mes;
+    moviendo = null;
     const cuerpo = $('#cuerpoPres');
-    if (cache && cache.mes === hoy().slice(0, 7)) pintarPresupuestos(cache, 'Actualizando…');
-    else cuerpo.innerHTML = '<div class="cargando">Mirando tus cuentas…</div>';
+    const cache = mes === mesActualIso() ? resumenCache() : null;
+    if (cache && cache.mes === mes) pintarPresupuestos(cache, 'Actualizando…');
+    else {
+      pintarNavMes({ mes, mesActual: mesActualIso(), mesInicio: vista ? vista.mesInicio : mes, mesNombre: nombreMes(mes) });
+      cuerpo.innerHTML = '<div class="cargando">Mirando tus cuentas…</div>';
+    }
     try {
-      const r = await llamar('summary', { hoy: hoy() });
+      const r = await llamar('summary', { hoy: hoy(), mes });
       if (!r.ok) throw new Error(r.error);
-      guardarResumen(r.resumen);
-      if (panelAbierto !== 'panelPresupuestos') return;
+      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      if (panelAbierto !== 'panelPresupuestos' || mesMostrado !== mes) return;
       pintarPresupuestos(r.resumen, '');
       ultimoResumenHablado = r.resumen;
-      if (config.voz) hablar(textoHablado(r.resumen));
+      if (conVoz && config.voz) hablar(textoHablado(r.resumen));
     } catch (e) {
-      if (panelAbierto !== 'panelPresupuestos') return;
+      if (panelAbierto !== 'panelPresupuestos' || mesMostrado !== mes) return;
       if (cache) {
         pintarPresupuestos(cache, 'Sin conexión: datos de la última vez' + (leerCola().length ? ' (sin los apuntes pendientes)' : ''));
         ultimoResumenHablado = cache;
-        if (config.voz) hablar(textoHablado(cache));
+        if (conVoz && config.voz) hablar(textoHablado(cache));
       } else {
         cuerpo.innerHTML = `<div class="cargando">${esc(e.message || 'No he podido leer la hoja')}</div>`;
       }
     }
   }
 
+  function pintarNavMes(r) {
+    // "Noviembre" (año actual) o "Diciembre 2025": cabe entre las flechas.
+    const [y, mm] = r.mes.split('-').map(Number);
+    const nombre = capital(new Date(y, mm - 1, 1).toLocaleDateString('es-ES', { month: 'long' }));
+    $('#tituloPres').textContent = y === Number(mesActualIso().slice(0, 4)) ? nombre : `${nombre} ${y}`;
+    $('#btnMesAnterior').disabled = !(r.mesInicio && r.mes > r.mesInicio);
+    $('#btnMesSiguiente').disabled = !(r.mes < (r.mesActual || mesActualIso()));
+  }
+
+  function filaMovimiento(m, conCategoria) {
+    const ingreso = m.tipo === 'Ingreso';
+    const cats = (vista ? vista.categorias : categoriasCache()).filter((c) => !c.huerfana);
+    const selector = moviendo === m.id ? `
+      <div class="mov-chips">${cats.map((c) => `<button class="chip ${normalizar(c.nombre) === normalizar(m.categoria) ? 'activa' : ''}"
+        type="button" data-mover-a="${esc(c.nombre)}" data-id="${esc(m.id)}">${esc(c.nombre)}</button>`).join('')}</div>` : '';
+    return `
+      <div class="mov">
+        <div class="mov-txt"><div class="mov-concepto">${esc(m.concepto)}</div>
+          <div class="mov-sub">${conCategoria ? esc(m.categoria) + ' · ' : ''}${esc(fechaCorta(m.fecha))}</div></div>
+        <div class="mov-imp ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : '−'}${eur(m.importe)}</div>
+        <div class="mov-acciones">
+          ${ingreso ? '' : `<button class="mini-btn" type="button" data-mover="${esc(m.id)}" aria-label="Cambiar de categoría">${ICONOS.etiqueta}</button>`}
+          <button class="mini-btn peligro" type="button" data-borrar="${esc(m.id)}" aria-label="Borrar apunte">${ICONOS.papelera}</button>
+        </div>
+      </div>${selector}`;
+  }
+
+  function bloqueCategoria(clase, nombre, cifras, barra, notas, lista) {
+    const abierta = abiertas.has(nombre);
+    return `
+      <div class="cat ${clase} ${abierta ? 'abierta' : ''}">
+        <div class="cat-cab" role="button" tabindex="0" data-cat="${esc(nombre)}" aria-expanded="${abierta}">
+          <div class="cat-fila"><span class="cat-nombre">${esc(nombre)}</span>
+            <span class="cat-cifras">${cifras}${ICONOS.flecha}</span></div>
+          ${barra}${notas}
+        </div>
+        ${abierta ? `<div class="cat-movs">${lista.length ? lista.map((m) => filaMovimiento(m, false)).join('') : '<p class="vacio">Sin apuntes este mes.</p>'}</div>` : ''}
+      </div>`;
+  }
+
   function pintarPresupuestos(r, aviso) {
+    vista = r;
+    pintarNavMes(r);
     const ritmo = r.dia / r.diasMes;
     const quedan = r.total.presupuesto - r.total.gastado;
     const dias = r.diasMes - r.dia + 1;
     const estTotal = estadoCategoria({ presupuesto: r.total.presupuesto, gastado: r.total.gastado }, ritmo);
-    $('#tituloPres').textContent = r.mesNombre ? capital(r.mesNombre) : 'Este mes';
+    const marcaRitmo = r.cerrado ? '' : `<span class="ritmo" style="left:${ritmo * 100}%"></span>`;
+    const movimientos = r.movimientos || r.ultimos || [];
+    const apuntes = (n) => (n === 1 ? '1 apunte' : `${n} apuntes`);
 
     const orden = { pasado: 0, ojo: 1, sin: 2, bien: 3, agotado: 4, vacio: 5 };
     const cats = r.categorias.slice().sort((a, b) => {
@@ -467,50 +552,108 @@
 
     const filas = cats.map((c) => {
       const e = estadoCategoria(c, ritmo);
+      const lista = movimientos.filter((m) => m.tipo !== 'Ingreso' && normalizar(m.categoria) === normalizar(c.nombre));
       let nota;
-      if (e === 'pasado') nota = `Te has pasado ${eur(c.gastado - c.presupuesto)}`;
-      else if (e === 'sin') nota = c.huerfana ? 'Sin presupuesto · cámbialos de categoría en la hoja' : 'Sin presupuesto';
+      if (e === 'pasado') nota = `${r.cerrado ? 'Te pasaste' : 'Te has pasado'} ${eur(c.gastado - c.presupuesto)}`;
+      else if (e === 'sin') nota = c.huerfana ? 'Sin presupuesto · toca para moverlos' : 'Sin presupuesto';
       else if (e === 'vacio') nota = 'Sin presupuesto ni gastos';
       else if (e === 'agotado') nota = 'Presupuesto agotado';
-      else nota = `Quedan ${eur(c.presupuesto - c.gastado)}` + (e === 'ojo' ? ' · vas rápido' : '');
-      return `
-        <div class="cat ${e}">
-          <div class="cat-fila"><span class="cat-nombre">${esc(c.nombre)}</span>
-            <span class="cat-cifras"><b>${eur(c.gastado)}</b> / ${eur(c.presupuesto)}</span></div>
-          <div class="barra"><i style="width:${Math.min(100, pct(c.gastado, c.presupuesto) * 100)}%"></i>
-            <span class="ritmo" style="left:${ritmo * 100}%"></span></div>
-          <div class="cat-nota">${nota}</div>
-        </div>`;
+      else nota = `${r.cerrado ? 'Sobraron' : 'Quedan'} ${eur(c.presupuesto - c.gastado)}` + (e === 'ojo' ? ' · vas rápido' : '');
+      let acum = '';
+      if (c.acumula) {
+        acum = `<div class="cat-acum">${ICONOS.ciclo}${c.acumulado > 0
+          ? `${eur(c.presupuestoBase)} + ${eur(c.acumulado)} que sobraron antes`
+          : 'Lo que sobre pasa al mes siguiente'}</div>`;
+      }
+      const barra = `<div class="barra"><i style="width:${Math.min(100, pct(c.gastado, c.presupuesto) * 100)}%"></i>${marcaRitmo}</div>`;
+      return bloqueCategoria(e, c.nombre, `<b>${eur(c.gastado)}</b> / ${eur(c.presupuesto)}`, barra,
+        `<div class="cat-nota">${nota} · ${apuntes(lista.length)}</div>${acum}`, lista);
     }).join('');
 
-    const movs = (r.ultimos || []).map((m) => {
-      const ingreso = m.tipo === 'Ingreso';
-      return `
-        <div class="mov">
-          <div class="mov-txt"><div class="mov-concepto">${esc(m.concepto)}</div>
-            <div class="mov-sub">${esc(m.categoria)} · ${esc(fechaCorta(m.fecha))}</div></div>
-          <div class="mov-imp ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : '−'}${eur(m.importe)}</div>
-        </div>`;
-    }).join('');
+    const ingresos = movimientos.filter((m) => m.tipo === 'Ingreso');
+    const bloqueIngresos = ingresos.length
+      ? bloqueCategoria('ingresos-cat', 'Ingresos', `<b class="ingresos">+${eur(r.ingresos)}</b>`, '',
+        `<div class="cat-nota">${apuntes(ingresos.length)}</div>`, ingresos)
+      : '';
+
+    const pasan = sobranteAcumulable(r);
+    const acum = acumuladoTotal(r);
+    let lineaAcum = '';
+    if (r.cerrado && pasan > 0) lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Pasaron a ${esc(nombreMes(mesSiguiente(r.mes)).split(' ')[0])}: <b>${eur(pasan)}</b></div>`;
+    else if (!r.cerrado && acum > 0) lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Incluye <b>${eur(acum)}</b> que sobraron de meses anteriores</div>`;
+
+    const recientes = r.cerrado ? '' : movimientos.slice(0, 8).map((m) => filaMovimiento(m, true)).join('');
 
     $('#cuerpoPres').innerHTML = `
       ${aviso ? `<p class="aviso-cache">${esc(aviso)}</p>` : ''}
       <div class="total ${estTotal}">
         <div class="total-cifra"><b>${eur(r.total.gastado)}</b><span>de ${eur(r.total.presupuesto)}</span></div>
-        <div class="barra gruesa ${estTotal}"><i style="width:${Math.min(100, pct(r.total.gastado, r.total.presupuesto) * 100)}%"></i>
-          <span class="ritmo" style="left:${ritmo * 100}%"></span></div>
-        <div class="total-linea">Día ${r.dia} de ${r.diasMes} ·
-          ${quedan >= 0
+        <div class="barra gruesa ${estTotal}"><i style="width:${Math.min(100, pct(r.total.gastado, r.total.presupuesto) * 100)}%"></i>${marcaRitmo}</div>
+        <div class="total-linea">${r.cerrado
+          ? 'Mes cerrado · ' + (quedan >= 0 ? `te sobraron <b>${eur(quedan)}</b>` : `<span class="mal">te pasaste <b>${eur(-quedan)}</b></span>`)
+          : `Día ${r.dia} de ${r.diasMes} · ` + (quedan >= 0
             ? `te quedan <b>${eur(quedan)}</b>` + (dias > 1 ? ` (${eur(quedan / dias)}/día)` : '')
-            : `<span class="mal">te has pasado <b>${eur(-quedan)}</b></span>`}
+            : `<span class="mal">te has pasado <b>${eur(-quedan)}</b></span>`)}
         </div>
+        ${lineaAcum}
         ${r.ingresos ? `<div class="total-linea">Ingresos: <span class="ingresos">+${eur(r.ingresos)}</span></div>` : ''}
       </div>
-      <p class="leyenda"><i></i> La rayita marca dónde deberías ir según el día del mes.</p>
-      <div class="seccion">Por categoría</div>
+      ${r.cerrado ? '' : '<p class="leyenda"><i></i> La rayita marca dónde deberías ir según el día del mes.</p>'}
+      <div class="seccion">Por categoría <span class="seccion-pista">· toca una para ver sus apuntes</span></div>
       ${filas}
-      ${movs ? `<div class="seccion">Últimos apuntes</div>${movs}` : ''}`;
+      ${bloqueIngresos}
+      ${recientes ? `<div class="seccion">Últimos apuntes</div>${recientes}` : ''}`;
   }
+
+  async function borrarApunte(id) {
+    const m = vista && (vista.movimientos || []).find((x) => x.id === id);
+    if (!m) return;
+    if (!confirm(`¿Borrar «${m.concepto}» de ${eur(m.importe)} (${fechaCorta(m.fecha)})?\nSe quita también de la hoja.`)) return;
+    try {
+      const r = await llamar('undo', { id, hoy: hoy(), mes: vista.mes });
+      if (!r.ok) { toast(r.error, 4000); return; }
+      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      if (actual && actual.mov.id === id) cerrarTarjeta();
+      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
+      vibrar(20);
+      toast('Apunte borrado');
+    } catch (e) { toast('Sin conexión: no he podido borrarlo.', 4000); }
+  }
+
+  async function moverApunte(id, categoria) {
+    moviendo = null;
+    const m = vista && (vista.movimientos || []).find((x) => x.id === id);
+    if (!m || normalizar(m.categoria) === normalizar(categoria)) { pintarPresupuestos(vista, ''); return; }
+    try {
+      const r = await llamar('recategorize', { id, categoria, hoy: hoy(), mes: vista.mes });
+      if (!r.ok) { toast(r.error, 4000); return; }
+      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
+      toast(`Movido a ${categoria}. La próxima vez lo recordaré.`);
+    } catch (e) { toast('Sin conexión: no he podido moverlo.', 4000); }
+  }
+
+  $('#cuerpoPres').addEventListener('click', (e) => {
+    const t = e.target;
+    const borrar = t.closest('[data-borrar]');
+    if (borrar) { borrarApunte(borrar.dataset.borrar); return; }
+    const destino = t.closest('[data-mover-a]');
+    if (destino) { moverApunte(destino.dataset.id, destino.dataset.moverA); return; }
+    const mover = t.closest('[data-mover]');
+    if (mover) { moviendo = moviendo === mover.dataset.mover ? null : mover.dataset.mover; pintarPresupuestos(vista, ''); return; }
+    const cat = t.closest('[data-cat]');
+    if (cat) {
+      const n = cat.dataset.cat;
+      if (abiertas.has(n)) abiertas.delete(n); else abiertas.add(n);
+      pintarPresupuestos(vista, '');
+    }
+  });
+  $('#cuerpoPres').addEventListener('keydown', (e) => {
+    const cat = e.target.closest('[data-cat]');
+    if (cat && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); cat.click(); }
+  });
+  $('#btnMesAnterior').addEventListener('click', () => { callar(); abiertas.clear(); cargarMes(mesAnterior(mesMostrado), true); });
+  $('#btnMesSiguiente').addEventListener('click', () => { callar(); abiertas.clear(); cargarMes(mesSiguiente(mesMostrado), true); });
 
   /* ───────── Ajustes y conexión ───────── */
   function guardarConfig(cambios) {

@@ -225,6 +225,28 @@ function redondear2(n) {
   return Math.round(n * 100) / 100;
 }
 
+/** "2026-12" -> "2027-01" */
+function mesSiguiente(mes) {
+  var p = mes.split('-').map(Number);
+  return p[1] === 12 ? (p[0] + 1) + '-01' : p[0] + '-' + (p[1] < 9 ? '0' : '') + (p[1] + 1);
+}
+
+/**
+ * Presupuesto acumulado que llega a `mes` en una categoría acumulativa: lo que no se gasta un mes
+ * se suma al siguiente, y así en cadena. Pasarse no resta (el saldo nunca baja de 0).
+ * @param {number} base         presupuesto mensual
+ * @param {Object} gastoPorMes  {"2026-10": 120.5, ...}
+ * @param {string} mesInicio    primer mes con apuntes ("yyyy-mm")
+ * @param {string} mes          mes que se consulta ("yyyy-mm")
+ */
+function saldoAcumulado(base, gastoPorMes, mesInicio, mes) {
+  var saldo = 0;
+  for (var m = mesInicio; m && m < mes; m = mesSiguiente(m)) {
+    saldo = Math.max(0, saldo + base - (gastoPorMes[m] || 0));
+  }
+  return redondear2(saldo);
+}
+
 /**
  * Interpreta una frase dictada.
  * @param {string} texto  p. ej. "he gastado 12 euros con 50 en el super"
@@ -294,6 +316,8 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizar: normalizar,
     convertirNumero: convertirNumero,
     buscarCategoria: buscarCategoria,
+    saldoAcumulado: saldoAcumulado,
+    mesSiguiente: mesSiguiente,
     CATEGORIAS_POR_DEFECTO: CATEGORIAS_POR_DEFECTO,
     CATEGORIA_OTROS: CATEGORIA_OTROS,
     CATEGORIA_INGRESOS: CATEGORIA_INGRESOS
