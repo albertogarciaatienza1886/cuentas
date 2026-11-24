@@ -273,6 +273,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .mini-btn svg { width: 18px; height: 18px; }
 .mini-btn:active { background: var(--superficie-2); }
 .mini-btn.peligro { color: var(--peligro); }
+.mini-btn.ok { color: var(--ok); }
 .mov-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 12px; }
 .seccion-pista { font-weight: 500; text-transform: none; letter-spacing: 0; }
 .titulo-mes { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 19px !important; }

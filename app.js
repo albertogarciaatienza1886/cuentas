@@ -276,7 +276,8 @@
     $('#transcripcion').textContent = '';
     pintarTarjeta(`
       <div class="t-cab ${pendiente ? 'pendiente' : ''}">
-        ${pendiente ? ICONOS.nube + 'Sin conexión · se enviará solo' : ICONOS.check + (ingreso ? 'Ingreso apuntado' : 'Apuntado')} ${fecha}
+        ${pendiente ? ICONOS.nube + 'Sin conexión · se enviará solo' : ICONOS.check + (ingreso ? 'Ingreso apuntado'
+          : mov.tipo === TIPO_POR_COBRAR ? 'Apuntado · lo paga la empresa' : 'Apuntado')} ${fecha}
       </div>
       <div class="t-importe ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : ''}${eur(mov.importe)}</div>
       <div class="t-concepto">${esc(mov.concepto)}</div>
@@ -409,7 +410,7 @@
     if (!actual || actual.pendiente) return;
     const sel = $('#selectorCategorias');
     if (!sel.hidden) { sel.hidden = true; return; }
-    const nombres = categoriasCache().map((c) => c.nombre);
+    const nombres = categoriasCache().map((c) => c.nombre).concat(CATEGORIA_POR_COBRAR);
     sel.innerHTML = nombres.map((n) =>
       `<button class="chip ${n === actual.mov.categoria ? 'activa' : ''}" type="button" data-categoria="${esc(n)}">${esc(n)}</button>`).join('');
     sel.hidden = false;
@@ -422,8 +423,10 @@
       const r = await llamar('recategorize', { id: mov.id, categoria: nombre, hoy: hoy() });
       if (!r.ok) { toast(r.error, 4000); return; }
       guardarResumen(r.resumen);
-      mostrarApunte(Object.assign({}, mov, { categoria: nombre }), false);
-      toast(`Movido a ${nombre}. La próxima vez lo recordaré.`);
+      const aEmpresa = nombre === CATEGORIA_POR_COBRAR;
+      const tipo = aEmpresa ? TIPO_POR_COBRAR : (mov.tipo === TIPO_POR_COBRAR ? 'Gasto' : mov.tipo);
+      mostrarApunte(Object.assign({}, mov, { categoria: nombre, tipo }), false);
+      toast(aEmpresa ? 'Pasado a pendiente de cobrar: no cuenta en tus presupuestos' : `Movido a ${nombre}. La próxima vez lo recordaré.`);
     } catch (e) { toast('Sin conexión: no he podido cambiarlo.'); }
   }
 
@@ -498,7 +501,10 @@
 
   function filaMovimiento(m, conCategoria) {
     const ingreso = m.tipo === 'Ingreso';
-    const cats = (vista ? vista.categorias : categoriasCache()).filter((c) => !c.huerfana);
+    const porCobrar = m.tipo === TIPO_POR_COBRAR;
+    // Un gasto se puede pasar a «Pendiente de cobrar»; uno de la empresa, devolver a un presupuesto.
+    const cats = (vista ? vista.categorias : categoriasCache()).filter((c) => !c.huerfana)
+      .concat(porCobrar ? [] : [{ nombre: CATEGORIA_POR_COBRAR }]);
     const selector = moviendo === m.id ? `
       <div class="mov-chips">${cats.map((c) => `<button class="chip ${normalizar(c.nombre) === normalizar(m.categoria) ? 'activa' : ''}"
         type="button" data-mover-a="${esc(c.nombre)}" data-id="${esc(m.id)}">${esc(c.nombre)}</button>`).join('')}</div>` : '';
@@ -510,6 +516,7 @@
         <div class="mov-imp ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : '−'}${eur(m.importe)}</div>
         <div class="mov-acciones">
           <button class="mini-btn" type="button" data-nota-editar="${esc(m.id)}" aria-label="${m.nota ? 'Cambiar la nota' : 'Añadir nota'}">${ICONOS.lapiz}</button>
+          ${porCobrar ? `<button class="mini-btn ok" type="button" data-cobrado="${esc(m.id)}" aria-label="Marcar como cobrado">${ICONOS.check}</button>` : ''}
           ${ingreso ? '' : `<button class="mini-btn" type="button" data-mover="${esc(m.id)}" aria-label="Cambiar de categoría">${ICONOS.etiqueta}</button>`}
           <button class="mini-btn peligro" type="button" data-borrar="${esc(m.id)}" aria-label="Borrar apunte">${ICONOS.papelera}</button>
         </div>
@@ -573,6 +580,14 @@
         `<div class="cat-nota">${apuntes(ingresos.length)}</div>`, ingresos)
       : '';
 
+    // Gastos que te devuelve la empresa: de cualquier mes, fuera de los presupuestos.
+    const cobrar = r.porCobrar || { total: 0, movimientos: [] };
+    const bloqueCobrar = cobrar.movimientos.length
+      ? bloqueCategoria('cobrar-cat', CATEGORIA_POR_COBRAR, `<b>${eur(cobrar.total)}</b>`, '',
+        `<div class="cat-nota">${apuntes(cobrar.movimientos.length)} · lo paga la empresa, no cuenta en los presupuestos</div>`,
+        cobrar.movimientos)
+      : '';
+
     const pasan = sobranteAcumulable(r);
     const acum = acumuladoTotal(r);
     let lineaAcum = '';
@@ -601,16 +616,37 @@
         </div>
         ${lineaAcum}
         ${r.ingresos ? `<div class="total-linea">Ingresos: <span class="ingresos">+${eur(r.ingresos)}</span></div>` : ''}
+        ${cobrar.total ? `<div class="total-linea">Pendiente de cobrar a la empresa: <b>${eur(cobrar.total)}</b></div>` : ''}
       </div>
       ${r.cerrado ? '' : '<p class="leyenda"><i></i> La rayita marca dónde deberías ir según el día del mes.</p>'}
       <div class="seccion">Por categoría <span class="seccion-pista">· toca una para ver sus apuntes</span></div>
       ${filas}
       ${bloqueIngresos}
+      ${bloqueCobrar}
       ${recientes ? `<div class="seccion">Últimos apuntes</div>${recientes}` : ''}`;
   }
 
+  /** Un apunte de lo que se ve en el panel: del mes o pendiente de cobrar. */
+  function apunteDeLaVista(id) {
+    if (!vista) return null;
+    return (vista.movimientos || []).concat((vista.porCobrar || {}).movimientos || []).find((x) => x.id === id) || null;
+  }
+
+  async function marcarCobrado(id) {
+    const m = apunteDeLaVista(id);
+    if (!m) return;
+    try {
+      const r = await llamar('collected', { id, hoy: hoy(), mes: vista.mes });
+      if (!r.ok) { toast(r.error, 4000); return; }
+      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
+      vibrar(20);
+      toast(`«${m.concepto}» marcado como cobrado`);
+    } catch (e) { toast('Sin conexión: no he podido marcarlo.', 4000); }
+  }
+
   async function borrarApunte(id) {
-    const m = vista && (vista.movimientos || []).find((x) => x.id === id);
+    const m = apunteDeLaVista(id);
     if (!m) return;
     if (!confirm(`¿Borrar «${m.concepto}» de ${eur(m.importe)} (${fechaCorta(m.fecha)})?\nSe quita también de la hoja.`)) return;
     try {
@@ -626,14 +662,15 @@
 
   async function moverApunte(id, categoria) {
     moviendo = null;
-    const m = vista && (vista.movimientos || []).find((x) => x.id === id);
+    const m = apunteDeLaVista(id);
     if (!m || normalizar(m.categoria) === normalizar(categoria)) { pintarPresupuestos(vista, ''); return; }
     try {
       const r = await llamar('recategorize', { id, categoria, hoy: hoy(), mes: vista.mes });
       if (!r.ok) { toast(r.error, 4000); return; }
       if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
       if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
-      toast(`Movido a ${categoria}. La próxima vez lo recordaré.`);
+      toast(categoria === CATEGORIA_POR_COBRAR ? 'Pasado a pendiente de cobrar: ya no cuenta en tus presupuestos'
+        : `Movido a ${categoria}. La próxima vez lo recordaré.`);
     } catch (e) { toast('Sin conexión: no he podido moverlo.', 4000); }
   }
 
@@ -651,6 +688,8 @@
     }
     const borrar = t.closest('[data-borrar]');
     if (borrar) { borrarApunte(borrar.dataset.borrar); return; }
+    const cobrado = t.closest('[data-cobrado]');
+    if (cobrado) { marcarCobrado(cobrado.dataset.cobrado); return; }
     const destino = t.closest('[data-mover-a]');
     if (destino) { moverApunte(destino.dataset.id, destino.dataset.moverA); return; }
     const mover = t.closest('[data-mover]');

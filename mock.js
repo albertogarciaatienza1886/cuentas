@@ -62,12 +62,14 @@
     d.movimientos.forEach((m) => {
       const mm = m.fecha.slice(0, 7);
       if (!mesInicio || mm < mesInicio) mesInicio = mm;
-      if (m.tipo === 'Ingreso') return;
+      if (m.tipo !== 'Gasto') return;
       gastoMesCat[mm] = gastoMesCat[mm] || {};
       gastoMesCat[mm][m.categoria] = (gastoMesCat[mm][m.categoria] || 0) + m.importe;
     });
-    const delMes = d.movimientos.map((m, fila) => Object.assign({ fila }, m)).filter((m) => m.fecha.slice(0, 7) === mes)
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.fila - a.fila));
+    const orden = (a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.fila - a.fila);
+    const conFila = d.movimientos.map((m, fila) => Object.assign({ fila }, m));
+    const delMes = conFila.filter((m) => m.fecha.slice(0, 7) === mes && (m.tipo === 'Gasto' || m.tipo === 'Ingreso')).sort(orden);
+    const porCobrar = conFila.filter((m) => m.tipo === TIPO_POR_COBRAR).sort(orden);
     const gastado = gastoMesCat[mes] || {};
     const categorias = d.categorias.map((c) => {
       const porMes = {};
@@ -95,8 +97,13 @@
         gastado: redondear2(delMes.filter((m) => m.tipo !== 'Ingreso').reduce((s, m) => s + m.importe, 0))
       },
       ingresos: redondear2(delMes.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + m.importe, 0)),
-      movimientos: delMes.map((m) => ({ id: m.id, fecha: m.fecha, tipo: m.tipo, importe: m.importe, categoria: m.categoria, concepto: m.concepto, nota: m.nota || '' }))
+      movimientos: delMes.map(limpio),
+      porCobrar: { total: redondear2(porCobrar.reduce((s, m) => s + m.importe, 0)), movimientos: porCobrar.map(limpio) }
     };
+  }
+
+  function limpio(m) {
+    return { id: m.id, fecha: m.fecha, tipo: m.tipo, importe: m.importe, categoria: m.categoria, concepto: m.concepto, nota: m.nota || '' };
   }
 
   async function llamar(action, datos) {
@@ -122,12 +129,25 @@
     }
     if (action === 'recategorize') {
       const mov = d.movimientos.find((m) => m.id === datos.id);
+      if (mov && datos.categoria === CATEGORIA_POR_COBRAR) {
+        Object.assign(mov, { categoria: CATEGORIA_POR_COBRAR, tipo: TIPO_POR_COBRAR });
+        guardar(d);
+        return { ok: true, resumen: resumen(d, hoy, datos.mes) };
+      }
       const cat = d.categorias.find((c) => c.nombre === datos.categoria);
       if (!mov || !cat) return { ok: false, error: 'No encuentro ese apunte o esa categoría.' };
       mov.categoria = cat.nombre;
+      if (mov.tipo !== 'Ingreso') mov.tipo = 'Gasto';
       const clave = normalizar(mov.concepto).trim();
       d.categorias.forEach((c) => { c.palabras = c.palabras.filter((w) => normalizar(w) !== clave); });
       cat.palabras.push(clave);
+      guardar(d);
+      return { ok: true, resumen: resumen(d, hoy, datos.mes) };
+    }
+    if (action === 'collected') {
+      const mov = d.movimientos.find((m) => m.id === datos.id);
+      if (!mov) return { ok: false, error: 'No encuentro ese apunte.' };
+      mov.tipo = datos.deshacer ? TIPO_POR_COBRAR : 'Cobrado';
       guardar(d);
       return { ok: true, resumen: resumen(d, hoy, datos.mes) };
     }

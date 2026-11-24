@@ -8,6 +8,10 @@
 
 var CATEGORIA_OTROS = 'Otros';
 var CATEGORIA_INGRESOS = 'Ingresos';
+// Gastos que te tiene que devolver la empresa: no cuentan en los presupuestos.
+var CATEGORIA_POR_COBRAR = 'Pendiente de cobrar';
+var TIPO_POR_COBRAR = 'Por cobrar';
+var TIPO_COBRADO = 'Cobrado';
 
 // Solo se usan para crear la hoja la primera vez y en el modo demo.
 // Después, las categorías, presupuestos y palabras clave se cambian en la
@@ -257,6 +261,16 @@ function saldoAcumulado(base, gastoPorMes, mesInicio, mes) {
   return redondear2(saldo);
 }
 
+var PATRON_POR_COBRAR = '(?:^|[\\s,.;:]+)(?:(?:y\\s+)?(?:pendiente\\s+de|a|por)\\s+cobrar(?:\\s+(?:de|a)\\s+la\\s+empresa)?' +
+  '|lo\\s+paga\\s+la\\s+empresa|(?:de|para|a)\\s+la\\s+empresa|empresa)(?=$|[\\s,.;:])';
+
+/** "Norauto 33 € para la empresa" -> ["Norauto 33 €", true] */
+function separarPorCobrar(texto) {
+  texto = String(texto);
+  if (texto.search(new RegExp(PATRON_POR_COBRAR, 'i')) < 0) return [texto, false];
+  return [texto.replace(new RegExp(PATRON_POR_COBRAR, 'gi'), ' ').replace(/\s+/g, ' ').trim(), true];
+}
+
 /** "50 € en gasolina, nota pagado con la cuenta secundaria" -> ["50 € en gasolina", "Pagado con la cuenta secundaria"] */
 function separarNota(texto) {
   var m = String(texto).match(/^(.*?)[\s,.;:]+(?:con\s+)?nota[\s,.:;]+(.+)$/i);
@@ -280,8 +294,10 @@ function interpretarFrase(texto, opciones) {
   if (!original) return { ok: false, error: 'No he oído nada.' };
   var partes = separarNota(original);
   var nota = partes[1];
+  var cobrar = separarPorCobrar(partes[0]);
+  var porCobrar = cobrar[1];
 
-  var toks = fusionarNumerosEnPalabras(tokenizar(partes[0]));
+  var toks = fusionarNumerosEnPalabras(tokenizar(cobrar[0]));
   var importe = extraerImporte(toks);
   if (!importe) {
     return { ok: false, texto: original, error: 'No he pillado el importe. Prueba con algo como «50 € en gasolina».' };
@@ -306,10 +322,12 @@ function interpretarFrase(texto, opciones) {
   var esIngreso = /\s(ingres\w*|cobr\w*|nomina|sueldo|salario|reembolso|devolucion)\s/.test(normTodo) ||
     /\sme (han )?(pagado|pagaron|devuelto|devolvieron)\s/.test(normTodo);
   if (/\sme (han |ha )?(cobrado|cobraron|cobran|cobra)\s/.test(normTodo)) esIngreso = false;
+  if (porCobrar) esIngreso = false;
 
   var normSinImporte = toks.filter(function (t, idx) { return !usados[idx]; })
     .map(function (t) { return t.n; }).join(' ');
-  var categoria = esIngreso ? CATEGORIA_INGRESOS : (buscarCategoria(normSinImporte, categorias) || categoriaResto(categorias));
+  var categoria = porCobrar ? CATEGORIA_POR_COBRAR : esIngreso ? CATEGORIA_INGRESOS
+    : (buscarCategoria(normSinImporte, categorias) || categoriaResto(categorias));
 
   var resto = toks.filter(function (t, idx) { return !usados[idx]; });
   while (resto.length && contiene(RELLENO_INICIO, resto[0].n)) resto.shift();
@@ -321,7 +339,7 @@ function interpretarFrase(texto, opciones) {
 
   return {
     ok: true,
-    tipo: esIngreso ? 'Ingreso' : 'Gasto',
+    tipo: porCobrar ? TIPO_POR_COBRAR : esIngreso ? 'Ingreso' : 'Gasto',
     importe: redondear2(importe.valor),
     categoria: categoria,
     concepto: concepto,
@@ -342,6 +360,8 @@ if (typeof module !== 'undefined' && module.exports) {
     mesSiguiente: mesSiguiente,
     CATEGORIAS_POR_DEFECTO: CATEGORIAS_POR_DEFECTO,
     CATEGORIA_OTROS: CATEGORIA_OTROS,
+    CATEGORIA_POR_COBRAR: CATEGORIA_POR_COBRAR,
+    TIPO_POR_COBRAR: TIPO_POR_COBRAR,
     CATEGORIA_INGRESOS: CATEGORIA_INGRESOS
   };
 }
