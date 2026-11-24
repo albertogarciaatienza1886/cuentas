@@ -7,7 +7,7 @@
   const leer = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } };
   const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* almacenamiento no disponible */ } };
 
-  let config = Object.assign({ api: '', k: '', voz: true, vozApunte: false }, leer(CLAVES.config, {}));
+  let config = Object.assign({ api: '', k: '' }, leer(CLAVES.config, {}));
   const configurado = () => Boolean(config.api && config.k);
 
   /* ───────── Formato ───────── */
@@ -139,78 +139,10 @@
     if (enviados) toast(enviados === 1 ? 'Se ha enviado 1 apunte pendiente' : `Se han enviado ${enviados} apuntes pendientes`);
   }
 
-  /* ───────── Voz: hablar ───────── */
-  let vozDesbloqueada = false;
-  function desbloquearVoz() {
-    // iOS solo deja hablar si el primer speak() ocurre dentro de un toque
-    if (vozDesbloqueada || !('speechSynthesis' in window)) return;
-    speechSynthesis.speak(new SpeechSynthesisUtterance(''));
-    vozDesbloqueada = true;
-  }
-  function vozEspanola() {
-    const vs = speechSynthesis.getVoices();
-    return vs.find((v) => v.lang === 'es-ES' && /google/i.test(v.name)) || vs.find((v) => v.lang === 'es-ES') ||
-      vs.find((v) => (v.lang || '').toLowerCase().startsWith('es'));
-  }
-  function hablar(texto) {
-    if (!('speechSynthesis' in window) || !texto) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(texto);
-    u.lang = 'es-ES';
-    const v = vozEspanola();
-    if (v) u.voice = v;
-    u.rate = 1.05;
-    speechSynthesis.speak(u);
-  }
-  const callar = () => { if ('speechSynthesis' in window) speechSynthesis.cancel(); };
-
-  function eurosHablados(n) {
-    n = Math.abs(n);
-    if (n >= 10 || Math.abs(n - Math.round(n)) < 0.005) {
-      const e = Math.round(n);
-      return e === 1 ? '1 euro' : `${e.toLocaleString('es-ES')} euros`;
-    }
-    const e = Math.floor(n), c = Math.round((n - e) * 100);
-    return e ? `${e} ${e === 1 ? 'euro' : 'euros'} con ${c}` : `${c} céntimos`;
-  }
-  const listaHablada = (xs) => (xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1]);
-
   /** Lo que sobra en las categorías acumulativas y pasará al mes siguiente. */
   const sobranteAcumulable = (r) => r.categorias.filter((c) => c.acumula)
     .reduce((s, c) => s + Math.max(0, c.presupuesto - c.gastado), 0);
   const acumuladoTotal = (r) => r.categorias.reduce((s, c) => s + (c.acumulado || 0), 0);
-
-  function textoHablado(r) {
-    const ritmo = r.dia / r.diasMes;
-    const quedan = r.total.presupuesto - r.total.gastado;
-    const dias = r.diasMes - r.dia + 1;
-    const pasadas = r.categorias.filter((c) => estadoCategoria(c, ritmo) === 'pasado');
-    const ojo = r.cerrado ? [] : r.categorias.filter((c) => estadoCategoria(c, ritmo) === 'ojo');
-    const porCategoria = (c) => `${c.nombre}, por ${eurosHablados(c.gastado - c.presupuesto)}`;
-    let t;
-    if (r.cerrado) {
-      t = `En ${r.mesNombre} gastaste ${eurosHablados(r.total.gastado)} de ${eurosHablados(r.total.presupuesto)}. `;
-      t += quedan >= 0 ? `Te sobraron ${eurosHablados(quedan)}. ` : `En total te pasaste ${eurosHablados(quedan)}. `;
-      if (pasadas.length) t += 'Te pasaste en ' + listaHablada(pasadas.map(porCategoria)) + '. ';
-      const pasan = sobranteAcumulable(r);
-      if (pasan > 0) t += `Pasaron al mes siguiente ${eurosHablados(pasan)} acumulados. `;
-    } else {
-      t = `Llevas ${eurosHablados(r.total.gastado)} de ${eurosHablados(r.total.presupuesto)} este mes. `;
-      t += quedan >= 0
-        ? `Te quedan ${eurosHablados(quedan)} para ${dias === 1 ? 'hoy' : dias + ' días'}. `
-        : `Te has pasado del total en ${eurosHablados(quedan)}. `;
-      if (pasadas.length) t += 'Te has pasado en ' + listaHablada(pasadas.map(porCategoria)) + '. ';
-      if (ojo.length) t += 'Ojo con ' + listaHablada(ojo.map((c) => `${c.nombre}, que llevas el ${Math.round(pct(c.gastado, c.presupuesto) * 100)} por ciento`)) + '. ';
-      if (!pasadas.length && !ojo.length) t += 'Vas bien en todas las categorías. ';
-      const acum = acumuladoTotal(r);
-      if (acum > 0) t += `Incluye ${eurosHablados(acum)} que te sobraron de meses anteriores.`;
-    }
-    const sinClasificar = r.categorias.filter((c) => c.huerfana && c.gastado > 0);
-    if (sinClasificar.length) {
-      t += ' Tienes ' + listaHablada(sinClasificar.map((c) => `${eurosHablados(c.gastado)} en ${c.nombre}`)) + ', sin presupuesto.';
-    }
-    return t.trim();
-  }
 
   /* ───────── Voz: escuchar ───────── */
   const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -223,8 +155,6 @@
   }
 
   function alternarMicro() {
-    desbloquearVoz();
-    callar();
     if (escuchando && rec) { rec.stop(); return; }
     if (document.body.classList.contains('enviando')) return;
     if (!Reconocimiento) {
@@ -313,7 +243,6 @@
       guardarResumen(r.resumen);
       mostrarApunte(r.movimiento, false);
       vibrar([20, 40, 20]);
-      if (config.vozApunte) hablar(`Apuntado: ${eurosHablados(r.movimiento.importe)} en ${r.movimiento.categoria}`);
     } catch (e) {
       estado('');
       if (!(e instanceof ErrorRed)) throw e;
@@ -438,13 +367,11 @@
   function cerrarPanel(sinHistorial) {
     if (!panelAbierto) return;
     $('#' + panelAbierto).hidden = true;
-    if (panelAbierto === 'panelPresupuestos') callar();
     panelAbierto = null;
     if (!sinHistorial && history.state && history.state.panel) history.back();
   }
   window.addEventListener('popstate', () => { if (panelAbierto) cerrarPanel(true); });
 
-  let ultimoResumenHablado = null;
   let vista = null;            // resumen que se ve ahora en el panel
   let mesMostrado = '';        // "yyyy-mm" pedido (aunque aún no haya llegado)
   let moviendo = null;         // id del apunte con el selector de categoría abierto
@@ -456,14 +383,13 @@
   function nombreMes(m) { const [y, mm] = m.split('-').map(Number); return new Date(y, mm - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }); }
 
   async function abrirPresupuestos() {
-    desbloquearVoz();
     abrirPanel('panelPresupuestos');
     abiertas.clear();
     moviendo = null;
-    await cargarMes(mesActualIso(), true);
+    await cargarMes(mesActualIso());
   }
 
-  async function cargarMes(mes, conVoz) {
+  async function cargarMes(mes) {
     mesMostrado = mes;
     moviendo = null;
     const cuerpo = $('#cuerpoPres');
@@ -479,14 +405,10 @@
       if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
       if (panelAbierto !== 'panelPresupuestos' || mesMostrado !== mes) return;
       pintarPresupuestos(r.resumen, '');
-      ultimoResumenHablado = r.resumen;
-      if (conVoz && config.voz) hablar(textoHablado(r.resumen));
     } catch (e) {
       if (panelAbierto !== 'panelPresupuestos' || mesMostrado !== mes) return;
       if (cache) {
         pintarPresupuestos(cache, 'Sin conexión: datos de la última vez' + (leerCola().length ? ' (sin los apuntes pendientes)' : ''));
-        ultimoResumenHablado = cache;
-        if (conVoz && config.voz) hablar(textoHablado(cache));
       } else {
         cuerpo.innerHTML = `<div class="cargando">${esc(e.message || 'No he podido leer la hoja')}</div>`;
       }
@@ -652,8 +574,8 @@
     const cat = e.target.closest('[data-cat]');
     if (cat && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); cat.click(); }
   });
-  $('#btnMesAnterior').addEventListener('click', () => { callar(); abiertas.clear(); cargarMes(mesAnterior(mesMostrado), true); });
-  $('#btnMesSiguiente').addEventListener('click', () => { callar(); abiertas.clear(); cargarMes(mesSiguiente(mesMostrado), true); });
+  $('#btnMesAnterior').addEventListener('click', () => { abiertas.clear(); cargarMes(mesAnterior(mesMostrado)); });
+  $('#btnMesSiguiente').addEventListener('click', () => { abiertas.clear(); cargarMes(mesSiguiente(mesMostrado)); });
 
   /* ───────── Ajustes y conexión ───────── */
   function guardarConfig(cambios) {
@@ -668,8 +590,6 @@
     e.textContent = configurado() ? 'Conectado a tu hoja de Google' : 'Modo demo (sin conectar)';
     $('#bannerDemo').hidden = configurado();
     $('#btnDesconectar').hidden = !configurado();
-    $('#optVoz').checked = !!config.voz;
-    $('#optVozApunte').checked = !!config.vozApunte;
   }
 
   /** Acepta el enlace completo (…#api=…&k=…) que genera la hoja. */
@@ -716,7 +636,6 @@
   document.querySelectorAll('[data-abrir-presupuestos]').forEach((b) => b.addEventListener('click', abrirPresupuestos));
   document.querySelectorAll('[data-abrir]').forEach((b) => b.addEventListener('click', () => abrirPanel(b.dataset.abrir)));
   document.querySelectorAll('[data-cerrar]').forEach((b) => b.addEventListener('click', () => cerrarPanel(false)));
-  $('#btnRepetirVoz').addEventListener('click', () => { desbloquearVoz(); if (ultimoResumenHablado) hablar(textoHablado(ultimoResumenHablado)); });
 
   $('#btnEscribir').addEventListener('click', () => {
     const f = $('#formTexto');
@@ -756,8 +675,6 @@
     toast('Desconectado. Vuelves al modo demo.');
     refrescarCabecera();
   });
-  $('#optVoz').addEventListener('change', (e) => guardarConfig({ voz: e.target.checked }));
-  $('#optVozApunte').addEventListener('change', (e) => guardarConfig({ vozApunte: e.target.checked }));
 
   window.addEventListener('online', vaciarCola);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { vaciarCola(); refrescarCabecera(); } });
@@ -766,7 +683,7 @@
     try { const r = await llamar('summary', { hoy: hoy() }); if (r.ok) guardarResumen(r.resumen); } catch (e) { /* sin conexión */ }
   }
 
-  window.CuentasDebug = { textoHablado, resumenCache, leerCola };
+  window.CuentasDebug = { resumenCache, leerCola };
 
   /* ───────── Arranque ───────── */
   pintarConexion();
@@ -775,6 +692,5 @@
   leerEnlaceDeLaUrl();
   if (configurado()) vaciarCola();
   refrescarCabecera();
-  if ('speechSynthesis' in window) speechSynthesis.getVoices(); // precarga de voces
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
