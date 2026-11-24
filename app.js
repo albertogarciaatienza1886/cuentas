@@ -38,7 +38,8 @@
     lapiz: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
     papelera: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
     flecha: '<svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
-    ciclo: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>'
+    ciclo: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>',
+    nota: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4Z"/></svg>'
   };
 
   /* ───────── Avisos ───────── */
@@ -91,7 +92,9 @@
   }
 
   function estadoCategoria(c, ritmo) {
-    if (!c.presupuesto) return c.gastado > 0 ? 'sin' : 'vacio';
+    if (c.huerfana || (!c.presupuesto && !c.acumula)) return c.gastado > 0 ? 'sin' : 'vacio';
+    // Acumulativa sin saldo (o en negativo por meses anteriores): todo lo que gastes es pasarte.
+    if (c.presupuesto <= 0) return c.gastado > c.presupuesto ? 'pasado' : 'agotado';
     const p = c.gastado / c.presupuesto;
     if (p > 1.005) return 'pasado';
     if (p >= 0.97) return 'agotado'; // p. ej. el alquiler, pagado entero el día 1
@@ -105,10 +108,14 @@
     $('#cabMes').textContent = capital(new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'long' }));
     $('#cabResumen').textContent = `${eur(r.total.gastado)} de ${eur(r.total.presupuesto)}`;
     const barra = $('#cabBarra');
-    const p = pct(r.total.gastado, r.total.presupuesto);
-    barra.style.width = Math.min(100, p * 100) + '%';
-    barra.className = estadoCategoria({ presupuesto: r.total.presupuesto, gastado: r.total.gastado }, r.dia / r.diasMes);
+    const total = { presupuesto: r.total.presupuesto, gastado: r.total.gastado, acumula: true };
+    const e = estadoCategoria(total, r.dia / r.diasMes);
+    barra.style.width = anchoBarra(total, e) + '%';
+    barra.className = e;
   }
+
+  /** % de la barra: llena si te has pasado (también con presupuesto en negativo). */
+  const anchoBarra = (c, e) => (e === 'pasado' ? 100 : Math.min(100, pct(c.gastado, c.presupuesto) * 100));
 
   /* ───────── Cola sin conexión ───────── */
   const leerCola = () => leer(CLAVES.cola, []);
@@ -139,9 +146,9 @@
     if (enviados) toast(enviados === 1 ? 'Se ha enviado 1 apunte pendiente' : `Se han enviado ${enviados} apuntes pendientes`);
   }
 
-  /** Lo que sobra en las categorías acumulativas y pasará al mes siguiente. */
+  /** Lo que pasa al mes siguiente en las categorías acumulativas (negativo si te pasaste). */
   const sobranteAcumulable = (r) => r.categorias.filter((c) => c.acumula)
-    .reduce((s, c) => s + Math.max(0, c.presupuesto - c.gastado), 0);
+    .reduce((s, c) => s + c.presupuesto - c.gastado, 0);
   const acumuladoTotal = (r) => r.categorias.reduce((s, c) => s + (c.acumulado || 0), 0);
 
   /* ───────── Voz: escuchar ───────── */
@@ -247,7 +254,7 @@
       estado('');
       if (!(e instanceof ErrorRed)) throw e;
       encolar(item);
-      mostrarApunte({ id: item.idCliente, fecha: previo.fecha, tipo: previo.tipo, importe: previo.importe, categoria: previo.categoria, concepto: previo.concepto }, true);
+      mostrarApunte({ id: item.idCliente, fecha: previo.fecha, tipo: previo.tipo, importe: previo.importe, categoria: previo.categoria, concepto: previo.concepto, nota: previo.nota }, true);
       vibrar(30);
     }
   }
@@ -259,11 +266,11 @@
     const cat = !pendiente && r && r.categorias ? r.categorias.find((c) => c.nombre === mov.categoria) : null;
     const fecha = mov.fecha !== hoy() ? `<span class="t-fecha">· ${esc(fechaCorta(mov.fecha))}</span>` : '';
     let estadoCat = '';
-    if (cat && cat.presupuesto && !ingreso) {
+    if (cat && !cat.huerfana && (cat.presupuesto || cat.acumula) && !ingreso) {
       const ec = estadoCategoria(cat, r.dia / r.diasMes);
       estadoCat = `
         <div class="t-estado"><span>${esc(cat.nombre)} este mes</span><span><b>${eur(cat.gastado)}</b> de ${eur(cat.presupuesto)}</span></div>
-        <div class="barra ${ec}"><i style="width:${Math.min(100, pct(cat.gastado, cat.presupuesto) * 100)}%"></i>
+        <div class="barra ${ec}"><i style="width:${anchoBarra(cat, ec)}%"></i>
           <span class="ritmo" style="left:${(r.dia / r.diasMes) * 100}%"></span></div>`;
     }
     $('#transcripcion').textContent = '';
@@ -273,13 +280,78 @@
       </div>
       <div class="t-importe ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : ''}${eur(mov.importe)}</div>
       <div class="t-concepto">${esc(mov.concepto)}</div>
+      ${mov.nota ? `<div class="t-nota">${ICONOS.nota}${esc(mov.nota)}</div>` : ''}
       <div class="t-meta"><button class="chip" type="button" data-accion="cambiar" ${pendiente || ingreso ? 'disabled' : ''}>${ICONOS.etiqueta}${esc(mov.categoria)}</button></div>
       ${estadoCat}
       <div class="t-acciones">
         <button class="btn-sec" type="button" data-accion="deshacer">${ICONOS.deshacer}Deshacer</button>
         ${pendiente || ingreso ? '' : `<button class="btn-sec" type="button" data-accion="cambiar">${ICONOS.etiqueta}Categoría</button>`}
+        ${pendiente ? '' : `<button class="btn-sec" type="button" data-accion="nota">${ICONOS.lapiz}Nota</button>`}
       </div>
-      <div class="t-categorias" id="selectorCategorias" hidden></div>`);
+      <div class="t-categorias" id="selectorCategorias" hidden></div>
+      <div id="editorNotaTarjeta"></div>`);
+  }
+
+  /* ───────── Notas de los apuntes ───────── */
+  let editandoNota = null; // id del apunte con el editor de nota abierto en el panel
+
+  function notasSugeridas(excepto) {
+    const notas = ['Pagado con la cuenta secundaria'];
+    const fuente = (vista && vista.movimientos) || ((resumenCache() || {}).movimientos) || [];
+    fuente.forEach((m) => { if (m.nota && notas.indexOf(m.nota) < 0) notas.push(m.nota); });
+    return notas.filter((n) => n !== excepto).slice(0, 4);
+  }
+
+  function editorNota(m) {
+    const sugeridas = notasSugeridas(m.nota);
+    return `
+      <div class="nota-editor" data-editor-nota="${esc(m.id)}">
+        <input type="text" maxlength="200" value="${esc(m.nota || '')}" enterkeyhint="done"
+               placeholder="p. ej. Pagado con la cuenta secundaria" aria-label="Nota del apunte">
+        ${sugeridas.length ? `<div class="nota-sugerencias">${sugeridas.map((n) =>
+          `<button class="chip" type="button" data-nota-rapida="${esc(n)}" data-id="${esc(m.id)}">${esc(n)}</button>`).join('')}</div>` : ''}
+        <div class="t-acciones">
+          <button class="btn-sec" type="button" data-nota-guardar="${esc(m.id)}">Guardar nota</button>
+          ${m.nota ? `<button class="btn-sec peligro" type="button" data-nota-quitar="${esc(m.id)}">Quitar nota</button>` : ''}
+        </div>
+      </div>`;
+  }
+
+  async function guardarNota(id, nota) {
+    const mes = panelAbierto === 'panelPresupuestos' && vista ? vista.mes : mesActualIso();
+    try {
+      const r = await llamar('note', { id, nota, hoy: hoy(), mes });
+      if (!r.ok) { toast(r.error, 4000); return; }
+      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      editandoNota = null;
+      if (actual && actual.mov.id === id && !$('#tarjeta').hidden) {
+        actual.mov.nota = r.nota;
+        mostrarApunte(actual.mov, false);
+      }
+      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
+      toast(r.nota ? 'Nota guardada' : 'Nota quitada');
+    } catch (e) { toast('Sin conexión: no he podido guardar la nota.', 4000); }
+  }
+
+  /** Clics dentro de un editor de nota (en la tarjeta o en el panel). Devuelve true si lo ha atendido. */
+  function clicEnNota(t) {
+    const rapida = t.closest('[data-nota-rapida]');
+    if (rapida) { guardarNota(rapida.dataset.id, rapida.dataset.notaRapida); return true; }
+    const g = t.closest('[data-nota-guardar]');
+    if (g) { guardarNota(g.dataset.notaGuardar, g.closest('[data-editor-nota]').querySelector('input').value); return true; }
+    const q = t.closest('[data-nota-quitar]');
+    if (q) { guardarNota(q.dataset.notaQuitar, ''); return true; }
+    return false;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const ed = e.target.closest && e.target.closest('[data-editor-nota]');
+    if (ed && e.key === 'Enter') { e.preventDefault(); guardarNota(ed.dataset.editorNota, e.target.value); }
+  });
+
+  function enfocarEditorNota(contenedor) {
+    const i = contenedor.querySelector('[data-editor-nota] input');
+    if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   }
 
   function mostrarError(mensaje, texto) {
@@ -433,13 +505,15 @@
     return `
       <div class="mov">
         <div class="mov-txt"><div class="mov-concepto">${esc(m.concepto)}</div>
-          <div class="mov-sub">${conCategoria ? esc(m.categoria) + ' · ' : ''}${esc(fechaCorta(m.fecha))}</div></div>
+          <div class="mov-sub">${conCategoria ? esc(m.categoria) + ' · ' : ''}${esc(fechaCorta(m.fecha))}</div>
+          ${m.nota ? `<div class="mov-nota">${ICONOS.nota}${esc(m.nota)}</div>` : ''}</div>
         <div class="mov-imp ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : '−'}${eur(m.importe)}</div>
         <div class="mov-acciones">
+          <button class="mini-btn" type="button" data-nota-editar="${esc(m.id)}" aria-label="${m.nota ? 'Cambiar la nota' : 'Añadir nota'}">${ICONOS.lapiz}</button>
           ${ingreso ? '' : `<button class="mini-btn" type="button" data-mover="${esc(m.id)}" aria-label="Cambiar de categoría">${ICONOS.etiqueta}</button>`}
           <button class="mini-btn peligro" type="button" data-borrar="${esc(m.id)}" aria-label="Borrar apunte">${ICONOS.papelera}</button>
         </div>
-      </div>${selector}`;
+      </div>${selector}${editandoNota === m.id ? editorNota(m) : ''}`;
   }
 
   function bloqueCategoria(clase, nombre, cifras, barra, notas, lista) {
@@ -461,7 +535,7 @@
     const ritmo = r.dia / r.diasMes;
     const quedan = r.total.presupuesto - r.total.gastado;
     const dias = r.diasMes - r.dia + 1;
-    const estTotal = estadoCategoria({ presupuesto: r.total.presupuesto, gastado: r.total.gastado }, ritmo);
+    const estTotal = estadoCategoria({ presupuesto: r.total.presupuesto, gastado: r.total.gastado, acumula: true }, ritmo);
     const marcaRitmo = r.cerrado ? '' : `<span class="ritmo" style="left:${ritmo * 100}%"></span>`;
     const movimientos = r.movimientos || r.ultimos || [];
     const apuntes = (n) => (n === 1 ? '1 apunte' : `${n} apuntes`);
@@ -483,11 +557,12 @@
       else nota = `${r.cerrado ? 'Sobraron' : 'Quedan'} ${eur(c.presupuesto - c.gastado)}` + (e === 'ojo' ? ' · vas rápido' : '');
       let acum = '';
       if (c.acumula) {
-        acum = `<div class="cat-acum">${ICONOS.ciclo}${c.acumulado > 0
-          ? `${eur(c.presupuestoBase)} + ${eur(c.acumulado)} que sobraron antes`
-          : 'Lo que sobre pasa al mes siguiente'}</div>`;
+        let txt = 'Lo que sobre o te pases pasa al mes siguiente';
+        if (c.acumulado > 0) txt = `${eur(c.presupuestoBase)} + ${eur(c.acumulado)} que sobraron antes`;
+        else if (c.acumulado < 0) txt = `${eur(c.presupuestoBase)} − ${eur(-c.acumulado)} que te pasaste antes`;
+        acum = `<div class="cat-acum ${c.acumulado < 0 ? 'negativo' : ''}">${ICONOS.ciclo}${txt}</div>`;
       }
-      const barra = `<div class="barra"><i style="width:${Math.min(100, pct(c.gastado, c.presupuesto) * 100)}%"></i>${marcaRitmo}</div>`;
+      const barra = `<div class="barra"><i style="width:${anchoBarra(c, e)}%"></i>${marcaRitmo}</div>`;
       return bloqueCategoria(e, c.nombre, `<b>${eur(c.gastado)}</b> / ${eur(c.presupuesto)}`, barra,
         `<div class="cat-nota">${nota} · ${apuntes(lista.length)}</div>${acum}`, lista);
     }).join('');
@@ -501,8 +576,15 @@
     const pasan = sobranteAcumulable(r);
     const acum = acumuladoTotal(r);
     let lineaAcum = '';
-    if (r.cerrado && pasan > 0) lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Pasaron a ${esc(nombreMes(mesSiguiente(r.mes)).split(' ')[0])}: <b>${eur(pasan)}</b></div>`;
-    else if (!r.cerrado && acum > 0) lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Incluye <b>${eur(acum)}</b> que sobraron de meses anteriores</div>`;
+    const mesQueViene = esc(nombreMes(mesSiguiente(r.mes)).split(' ')[0]);
+    if (r.cerrado && Math.abs(pasan) >= 0.005) {
+      lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Pasaron a ${mesQueViene}: ` +
+        (pasan > 0 ? `<b>${eur(pasan)}</b>` : `<b class="mal">−${eur(-pasan)}</b> (te pasaste)`) + '</div>';
+    } else if (!r.cerrado && acum > 0) {
+      lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Incluye <b>${eur(acum)}</b> que sobraron de meses anteriores</div>`;
+    } else if (!r.cerrado && acum < 0) {
+      lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Descuenta <b class="mal">${eur(-acum)}</b> que te pasaste en meses anteriores</div>`;
+    }
 
     const recientes = r.cerrado ? '' : movimientos.slice(0, 8).map((m) => filaMovimiento(m, true)).join('');
 
@@ -510,7 +592,7 @@
       ${aviso ? `<p class="aviso-cache">${esc(aviso)}</p>` : ''}
       <div class="total ${estTotal}">
         <div class="total-cifra"><b>${eur(r.total.gastado)}</b><span>de ${eur(r.total.presupuesto)}</span></div>
-        <div class="barra gruesa ${estTotal}"><i style="width:${Math.min(100, pct(r.total.gastado, r.total.presupuesto) * 100)}%"></i>${marcaRitmo}</div>
+        <div class="barra gruesa ${estTotal}"><i style="width:${anchoBarra(r.total, estTotal)}%"></i>${marcaRitmo}</div>
         <div class="total-linea">${r.cerrado
           ? 'Mes cerrado · ' + (quedan >= 0 ? `te sobraron <b>${eur(quedan)}</b>` : `<span class="mal">te pasaste <b>${eur(-quedan)}</b></span>`)
           : `Día ${r.dia} de ${r.diasMes} · ` + (quedan >= 0
@@ -557,6 +639,16 @@
 
   $('#cuerpoPres').addEventListener('click', (e) => {
     const t = e.target;
+    if (clicEnNota(t)) return;
+    if (t.closest('[data-editor-nota]')) return; // tocar dentro del editor no cierra nada
+    const editar = t.closest('[data-nota-editar]');
+    if (editar) {
+      editandoNota = editandoNota === editar.dataset.notaEditar ? null : editar.dataset.notaEditar;
+      moviendo = null;
+      pintarPresupuestos(vista, '');
+      enfocarEditorNota($('#cuerpoPres'));
+      return;
+    }
     const borrar = t.closest('[data-borrar]');
     if (borrar) { borrarApunte(borrar.dataset.borrar); return; }
     const destino = t.closest('[data-mover-a]');
@@ -650,6 +742,7 @@
   });
 
   $('#tarjeta').addEventListener('click', (e) => {
+    if (clicEnNota(e.target)) return;
     const cat = e.target.closest('[data-categoria]');
     if (cat) { cambiarCategoria(cat.dataset.categoria); return; }
     const b = e.target.closest('[data-accion]');
@@ -657,6 +750,11 @@
     const accion = b.dataset.accion;
     if (accion === 'deshacer') deshacer();
     else if (accion === 'cambiar') mostrarSelector();
+    else if (accion === 'nota' && actual) {
+      const caja = $('#editorNotaTarjeta');
+      caja.innerHTML = caja.innerHTML ? '' : editorNota(actual.mov);
+      enfocarEditorNota(caja);
+    }
     else if (accion === 'dictar') alternarMicro();
     else if (accion === 'corregir') mostrarFormulario(b.dataset.texto);
   });

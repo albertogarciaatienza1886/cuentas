@@ -252,9 +252,22 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   background: var(--superficie); border: 1px solid var(--borde);
 }
 .cat-movs .vacio { margin: 12px 0; font-size: 14px; color: var(--suave); }
-.mov-acciones { display: flex; gap: 2px; flex: none; }
+.mov-acciones { display: flex; gap: 0; flex: none; }
+.mov-nota, .t-nota { font-size: 12.5px; color: var(--suave); font-style: italic; overflow-wrap: anywhere; }
+.t-nota { font-size: 14px; margin-top: 4px; }
+.mov-nota svg, .t-nota svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+.nota-editor { display: grid; gap: 8px; padding: 6px 0 12px; }
+.nota-editor input {
+  width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde);
+  background: var(--fondo); color: var(--texto); font-size: 16px;
+}
+.nota-editor input:focus { outline: 2px solid var(--acento); outline-offset: 1px; }
+.nota-sugerencias { display: flex; flex-wrap: wrap; gap: 8px; }
+.nota-editor .t-acciones { margin-top: 0; }
+.cat-acum.negativo { color: var(--peligro); }
+.cat-acum.negativo svg { color: var(--peligro); }
 .mini-btn {
-  width: 36px; height: 36px; display: grid; place-items: center; flex: none;
+  width: 34px; height: 36px; display: grid; place-items: center; flex: none;
   border: 0; border-radius: 10px; background: transparent; color: var(--suave);
 }
 .mini-btn svg { width: 18px; height: 18px; }

@@ -27,7 +27,7 @@
     const mesPasado = [
       [1, 'Ingreso', 1850, 'Ingresos', 'Nómina'], [1, 'Gasto', 700, 'Casa', 'Alquiler'],
       [4, 'Gasto', 120, 'Supermercado', 'Mercadona'], [8, 'Gasto', 60, 'Transporte', 'Gasolina'],
-      [12, 'Gasto', 30, 'Ropa', 'Camiseta'], [15, 'Gasto', 12.99, 'Suscripciones', 'Netflix'],
+      [12, 'Gasto', 30, 'Ropa', 'Camiseta'], [15, 'Gasto', 62.99, 'Suscripciones', 'Netflix y gimnasio'],
       [20, 'Gasto', 48, 'Restaurantes y ocio', 'Cena']
     ];
     const iso = (mes, dia) => fechaIsoLocal(new Date(y, mes, dia));
@@ -95,7 +95,7 @@
         gastado: redondear2(delMes.filter((m) => m.tipo !== 'Ingreso').reduce((s, m) => s + m.importe, 0))
       },
       ingresos: redondear2(delMes.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + m.importe, 0)),
-      movimientos: delMes.map((m) => ({ id: m.id, fecha: m.fecha, tipo: m.tipo, importe: m.importe, categoria: m.categoria, concepto: m.concepto }))
+      movimientos: delMes.map((m) => ({ id: m.id, fecha: m.fecha, tipo: m.tipo, importe: m.importe, categoria: m.categoria, concepto: m.concepto, nota: m.nota || '' }))
     };
   }
 
@@ -108,7 +108,7 @@
     if (action === 'add') {
       const p = interpretarFrase(datos.texto, { categorias: d.categorias, hoy });
       if (!p.ok) return p;
-      const mov = { id: datos.idCliente || String(Date.now()), fecha: p.fecha, tipo: p.tipo, importe: p.importe, categoria: p.categoria, concepto: p.concepto };
+      const mov = { id: datos.idCliente || String(Date.now()), fecha: p.fecha, tipo: p.tipo, importe: p.importe, categoria: p.categoria, concepto: p.concepto, nota: p.nota || '' };
       if (!d.movimientos.some((m) => m.id === mov.id)) d.movimientos.push(mov);
       guardar(d);
       return { ok: true, movimiento: mov, resumen: resumen(d, hoy) };
@@ -130,6 +130,13 @@
       cat.palabras.push(clave);
       guardar(d);
       return { ok: true, resumen: resumen(d, hoy, datos.mes) };
+    }
+    if (action === 'note') {
+      const mov = d.movimientos.find((m) => m.id === datos.id);
+      if (!mov) return { ok: false, error: 'No encuentro ese apunte.' };
+      mov.nota = String(datos.nota || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      guardar(d);
+      return { ok: true, nota: mov.nota, resumen: resumen(d, hoy, datos.mes) };
     }
     return { ok: false, error: 'Acción desconocida' };
   }

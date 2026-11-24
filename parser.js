@@ -233,18 +233,27 @@ function mesSiguiente(mes) {
 
 /**
  * Presupuesto acumulado que llega a `mes` en una categoría acumulativa: lo que no se gasta un mes
- * se suma al siguiente, y así en cadena. Pasarse no resta (el saldo nunca baja de 0).
+ * se suma al siguiente y lo que te pasas se resta, en cadena (el saldo puede quedar en negativo).
  * @param {number} base         presupuesto mensual
  * @param {Object} gastoPorMes  {"2026-10": 120.5, ...}
- * @param {string} mesInicio    primer mes con apuntes ("yyyy-mm")
+ * @param {string} mesInicio    mes desde el que se acumula ("yyyy-mm"): el primero con apuntes,
+ *                              o el de «Acumular desde» si es posterior
  * @param {string} mes          mes que se consulta ("yyyy-mm")
  */
 function saldoAcumulado(base, gastoPorMes, mesInicio, mes) {
   var saldo = 0;
   for (var m = mesInicio; m && m < mes; m = mesSiguiente(m)) {
-    saldo = Math.max(0, saldo + base - (gastoPorMes[m] || 0));
+    saldo += base - (gastoPorMes[m] || 0);
   }
   return redondear2(saldo);
+}
+
+/** "50 € en gasolina, nota pagado con la cuenta secundaria" -> ["50 € en gasolina", "Pagado con la cuenta secundaria"] */
+function separarNota(texto) {
+  var m = String(texto).match(/^(.*?)[\s,.;:]+(?:con\s+)?nota[\s,.:;]+(.+)$/i);
+  if (!m || !m[1].trim()) return [String(texto), ''];
+  var nota = m[2].trim().replace(/[\s.]+$/, '');
+  return [m[1], nota.charAt(0).toUpperCase() + nota.slice(1)];
 }
 
 /**
@@ -260,8 +269,10 @@ function interpretarFrase(texto, opciones) {
   var hoy = opciones.hoy || fechaIsoLocal(new Date());
   var original = String(texto == null ? '' : texto).trim();
   if (!original) return { ok: false, error: 'No he oído nada.' };
+  var partes = separarNota(original);
+  var nota = partes[1];
 
-  var toks = fusionarNumerosEnPalabras(tokenizar(original));
+  var toks = fusionarNumerosEnPalabras(tokenizar(partes[0]));
   var importe = extraerImporte(toks);
   if (!importe) {
     return { ok: false, texto: original, error: 'No he pillado el importe. Prueba con algo como «50 € en gasolina».' };
@@ -306,6 +317,7 @@ function interpretarFrase(texto, opciones) {
     categoria: categoria,
     concepto: concepto,
     fecha: desfase ? sumarDias(hoy, desfase) : hoy,
+    nota: nota,
     texto: original
   };
 }
