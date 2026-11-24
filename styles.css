@@ -1,42 +1,25 @@
+/* Colores de la marca: negro, rojo y blanco (siempre en oscuro, como la web). */
 :root {
-  --fondo: #f4f5f7;
-  --superficie: #ffffff;
-  --superficie-2: #eceff3;
-  --texto: #0f172a;
-  --suave: #64748b;
-  --borde: #e2e8f0;
-  --acento: #0f766e;
-  --acento-claro: #2bb5a3;
-  --acento-suave: #ccfbef;
-  --grabando: #e11d48;
-  --grabando-claro: #fb7185;
-  --ok: #059669;
-  --aviso: #d97706;
-  --peligro: #dc2626;
-  --gris: #94a3b8;
-  --sombra: 0 12px 32px -14px rgba(15, 23, 42, .28);
+  --fondo: #0a0a0a;
+  --superficie: #141414;
+  --superficie-2: #1f1f1f;
+  --texto: #ffffff;
+  --suave: #a3a3a3;
+  --borde: #262626;
+  --acento: #e30613;
+  --acento-claro: #ff2b36;
+  --acento-oscuro: #b8040f;
+  --acento-texto: #ff5a62;
+  --acento-suave: rgba(227, 6, 19, .14);
+  --brillo: 0 10px 28px -6px rgba(227, 6, 19, .6);
+  --ok: #22c55e;
+  --aviso: #f59e0b;
+  --peligro: #ff4d4f;
+  --gris: #525252;
+  --sombra: 0 12px 32px -14px rgba(0, 0, 0, .85);
   --radio: 20px;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #0b1220;
-    --superficie: #121b2d;
-    --superficie-2: #1c2639;
-    --texto: #e5e9f0;
-    --suave: #94a3b8;
-    --borde: #243049;
-    --acento: #14b8a6;
-    --acento-claro: #5eead4;
-    --acento-suave: #123a3a;
-    --ok: #34d399;
-    --aviso: #fbbf24;
-    --peligro: #f87171;
-    --gris: #64748b;
-    --sombra: 0 12px 32px -14px rgba(0, 0, 0, .7);
-    color-scheme: dark;
-  }
+  --titulos: 800;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -67,9 +50,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 /* ── Banner demo ── */
 .banner {
   display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
-  margin: 10px 0 0; padding: 8px 12px; border-radius: 12px;
-  background: var(--acento-suave); color: var(--texto); font-size: 13px; text-align: center;
+  margin: 10px 0 0; padding: 7px 12px; border-radius: 14px;
+  background: var(--acento-suave); border: 1px solid rgba(227, 6, 19, .45);
+  color: var(--acento-texto); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; text-align: center;
 }
+.banner .enlace { color: var(--texto); text-transform: none; letter-spacing: 0; }
 
 /* ── Cabecera ── */
 .cabecera { display: flex; align-items: center; gap: 10px; padding: 14px 0 6px; }
@@ -77,7 +62,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left;
   background: none; border: 0; padding: 4px 0;
 }
-.cab-mes { font-weight: 700; font-size: 18px; letter-spacing: -.01em; text-transform: capitalize; }
+.cab-mes { font-weight: var(--titulos); font-size: 20px; letter-spacing: -.02em; text-transform: capitalize; }
 .cab-resumen { color: var(--suave); font-size: 13px; font-variant-numeric: tabular-nums; }
 .mini-barra { display: block; height: 4px; width: 140px; border-radius: 99px; background: var(--superficie-2); overflow: hidden; margin-top: 4px; }
 .mini-barra > span { display: block; height: 100%; width: 0; background: var(--ok); border-radius: inherit; transition: width .5s ease; }
@@ -106,23 +91,25 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .micro {
   position: relative; width: 180px; height: 180px; border-radius: 50%; border: 0;
   display: grid; place-items: center; color: #fff;
-  background: radial-gradient(circle at 32% 26%, var(--acento-claro), var(--acento) 70%);
-  box-shadow: 0 22px 44px -16px color-mix(in srgb, var(--acento) 75%, transparent), inset 0 -8px 18px rgba(0, 0, 0, .18);
-  transition: transform .15s ease, background .2s ease;
+  background: radial-gradient(circle at 32% 26%, var(--acento-claro), var(--acento) 55%, var(--acento-oscuro));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 24px 60px -12px rgba(227, 6, 19, .65), inset 0 -8px 18px rgba(0, 0, 0, .25);
+  transition: transform .15s ease;
   touch-action: manipulation;
 }
 .micro:active { transform: scale(.95); }
 .micro svg { position: relative; z-index: 1; width: 76px; height: 76px; stroke-width: 1.8; }
 .micro .ico-micro rect { fill: rgba(255, 255, 255, .22); }
 .micro .ico-stop { display: none; }
-.micro .ico-stop rect { fill: #fff; stroke: none; }
-.micro .onda { position: absolute; inset: 0; border-radius: 50%; opacity: 0; pointer-events: none; }
+.micro .ico-stop rect { fill: var(--acento); stroke: none; }
+/* z-index -1: las ondas laten por detrás del botón, sin teñirlo. */
+.micro .onda { position: absolute; inset: 0; z-index: -1; border-radius: 50%; opacity: 0; pointer-events: none; }
 .micro .giro { position: absolute; inset: -8px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--acento); opacity: 0; }
 
-.escuchando .micro { background: radial-gradient(circle at 32% 26%, var(--grabando-claro), var(--grabando) 70%); box-shadow: 0 22px 44px -16px color-mix(in srgb, var(--grabando) 75%, transparent); }
+/* Escuchando: el botón se vuelve blanco con un cuadrado rojo para parar, y late en rojo. */
+.escuchando .micro { background: #fff; box-shadow: 0 24px 60px -12px rgba(227, 6, 19, .7); }
 .escuchando .micro .ico-micro { display: none; }
 .escuchando .micro .ico-stop { display: block; width: 56px; height: 56px; }
-.escuchando .micro .onda { background: var(--grabando); animation: onda 1.8s ease-out infinite; }
+.escuchando .micro .onda { background: var(--acento); animation: onda 1.8s ease-out infinite; }
 .escuchando .micro .onda.o2 { animation-delay: .9s; }
 .enviando .micro { filter: saturate(.6); }
 .enviando .micro .giro { opacity: 1; animation: girar .9s linear infinite; }
@@ -147,7 +134,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .t-cab.pendiente { color: var(--aviso); }
 .t-cab.error { color: var(--peligro); }
 .t-cab .t-fecha { color: var(--suave); font-weight: 500; }
-.t-importe { font-size: 40px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.t-importe { font-size: 40px; font-weight: var(--titulos); letter-spacing: -.03em; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .t-importe.ingreso { color: var(--ok); }
 .t-concepto { font-size: 17px; margin-top: 2px; overflow-wrap: anywhere; }
 .t-meta { margin-top: 10px; }
@@ -167,8 +154,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 /* ── Botones ── */
 .btn-primario {
   padding: 13px 18px; border: 0; border-radius: 14px; background: var(--acento); color: #fff;
-  font-weight: 650; font-size: 16px;
+  font-weight: var(--titulos); font-size: 16px; box-shadow: var(--brillo);
 }
+.btn-primario:active { background: var(--acento-oscuro); }
 .btn-sec {
   flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 12px 10px; border: 1px solid var(--borde); border-radius: 14px; background: transparent;
@@ -177,7 +165,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .btn-sec svg { width: 18px; height: 18px; }
 .btn-sec:active, .chip:active { background: var(--superficie-2); }
 .btn-sec.peligro { color: var(--peligro); }
-.enlace { background: none; border: 0; padding: 4px; color: var(--acento); font-weight: 600; font-size: 14px; }
+.enlace { background: none; border: 0; padding: 4px; color: var(--acento-texto); font-weight: 600; font-size: 14px; }
 .escribir { display: inline-flex; align-items: center; gap: 6px; color: var(--suave); font-weight: 500; }
 .escribir svg { width: 20px; height: 20px; }
 
@@ -190,13 +178,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 
 /* ── Pie ── */
 .pie { padding: 0 0 16px; }
+/* Botón blanco, como «Contactar» en la web. */
 .btn-presupuestos {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 17px; border-radius: 18px; border: 1px solid var(--borde);
-  background: var(--superficie); box-shadow: var(--sombra); font-size: 17px; font-weight: 650;
+  padding: 17px; border-radius: 99px; border: 0;
+  background: #fff; color: #0a0a0a; box-shadow: var(--sombra); font-size: 17px; font-weight: var(--titulos);
 }
-.btn-presupuestos svg { width: 22px; height: 22px; color: var(--acento); }
-.btn-presupuestos:active { transform: scale(.99); }
+.btn-presupuestos svg { width: 22px; height: 22px; color: var(--acento); stroke-width: 2.4; }
+.btn-presupuestos:active { transform: scale(.99); background: #e5e5e5; }
 
 /* ── Paneles ── */
 .panel {
@@ -209,7 +198,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   display: flex; align-items: center; gap: 4px; padding: 10px 8px 6px 16px;
   max-width: 520px; width: 100%; margin: 0 auto;
 }
-.panel-cab h2 { flex: 1; margin: 0; font-size: 22px; letter-spacing: -.01em; }
+.panel-cab h2 { flex: 1; margin: 0; font-size: 22px; font-weight: var(--titulos); letter-spacing: -.02em; }
 .panel-cuerpo {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 6px 16px calc(24px + env(safe-area-inset-bottom));
@@ -221,7 +210,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   padding: 18px 16px; box-shadow: var(--sombra);
 }
 .total-cifra { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.total-cifra b { font-size: 34px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.total-cifra b { font-size: 34px; font-weight: var(--titulos); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .total-cifra span { color: var(--suave); }
 .total-linea { margin-top: 10px; font-size: 14px; color: var(--suave); }
 .total-linea b { color: var(--texto); font-weight: 600; }
@@ -236,7 +225,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .pasado .barra > i, .barra.pasado > i { background: var(--peligro); }
 .sin .barra > i { background: var(--gris); }
 
-.seccion { margin: 26px 2px 4px; font-size: 13px; font-weight: 700; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; }
+.seccion { margin: 26px 2px 4px; font-size: 12px; font-weight: 700; color: var(--acento-texto); text-transform: uppercase; letter-spacing: .08em; }
+.seccion-pista { color: var(--suave); }
 .leyenda { font-size: 12px; color: var(--suave); margin: 6px 2px 0; display: flex; align-items: center; gap: 6px; }
 .leyenda i { display: inline-block; width: 2px; height: 12px; background: var(--texto); opacity: .35; }
 
