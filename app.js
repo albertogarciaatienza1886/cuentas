@@ -329,19 +329,89 @@
   }
 
   async function guardarNota(id, nota) {
+    nota = String(nota || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     const mes = panelAbierto === 'panelPresupuestos' && vista ? vista.mes : mesActualIso();
-    try {
-      const r = await llamar('note', { id, nota, hoy: hoy(), mes });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
-      editandoNota = null;
-      if (actual && actual.mov.id === id && !$('#tarjeta').hidden) {
-        actual.mov.nota = r.nota;
-        mostrarApunte(actual.mov, false);
+    editandoNota = null;
+    const enTarjeta = actual && actual.mov.id === id && !$('#tarjeta').hidden;
+    const notaAntes = enTarjeta ? actual.mov.nota : '';
+    if (enTarjeta) { actual.mov.nota = nota; mostrarApunte(actual.mov, false); }
+    const r = await conCambioInstantaneo({ tipo: 'nota', id, nota }, 'note', { id, nota, hoy: hoy(), mes },
+      nota ? 'Nota guardada' : 'Nota quitada', 'No he podido guardar la nota');
+    if (!r && enTarjeta && actual && actual.mov.id === id) { actual.mov.nota = notaAntes; mostrarApunte(actual.mov, false); }
+  }
+
+  /* ───────── Cambios al instante (se guardan en la hoja por detrás) ───────── */
+  const copiar = (o) => JSON.parse(JSON.stringify(o));
+  const masRecienteMov = (a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0);
+
+  /**
+   * Copia del resumen con el efecto de una acción ya aplicado, para pintarlo sin esperar a Google.
+   * cambio: { tipo: 'borrar' | 'mover' | 'nota' | 'cobrado', id, categoria?, nota? }
+   */
+  function resumenConCambio(r, cambio) {
+    const c = copiar(r);
+    c.porCobrar = c.porCobrar || { total: 0, movimientos: [] };
+    const iMes = c.movimientos.findIndex((m) => m.id === cambio.id);
+    const iCobrar = c.porCobrar.movimientos.findIndex((m) => m.id === cambio.id);
+    const m = iMes >= 0 ? c.movimientos[iMes] : iCobrar >= 0 ? c.porCobrar.movimientos[iCobrar] : null;
+    if (!m) return c;
+    const sumarGasto = (categoria, delta) => {
+      const cat = c.categorias.find((x) => normalizar(x.nombre) === normalizar(categoria));
+      if (cat) cat.gastado = redondear2(cat.gastado + delta);
+      c.total.gastado = redondear2(c.total.gastado + delta);
+    };
+    const quitar = () => {
+      if (iMes >= 0) {
+        c.movimientos.splice(iMes, 1);
+        if (m.tipo === 'Ingreso') c.ingresos = redondear2(c.ingresos - m.importe);
+        else sumarGasto(m.categoria, -m.importe);
+      } else {
+        c.porCobrar.movimientos.splice(iCobrar, 1);
+        c.porCobrar.total = redondear2(c.porCobrar.total - m.importe);
       }
-      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
-      toast(r.nota ? 'Nota guardada' : 'Nota quitada');
-    } catch (e) { toast('Sin conexión: no he podido guardar la nota.', 4000); }
+    };
+    if (cambio.tipo === 'nota') {
+      m.nota = cambio.nota;
+    } else if (cambio.tipo === 'borrar' || cambio.tipo === 'cobrado') {
+      quitar();
+    } else if (cambio.tipo === 'mover') {
+      const aEmpresa = cambio.categoria === CATEGORIA_POR_COBRAR;
+      quitar();
+      const nuevo = Object.assign({}, m, {
+        categoria: cambio.categoria,
+        tipo: aEmpresa ? TIPO_POR_COBRAR : (m.tipo === TIPO_POR_COBRAR ? 'Gasto' : m.tipo)
+      });
+      if (aEmpresa) {
+        c.porCobrar.movimientos.unshift(nuevo);
+        c.porCobrar.total = redondear2(c.porCobrar.total + nuevo.importe);
+      } else if (nuevo.fecha.slice(0, 7) === c.mes) {
+        c.movimientos.push(nuevo);
+        c.movimientos.sort(masRecienteMov);
+        sumarGasto(nuevo.categoria, nuevo.importe);
+      }
+    }
+    return c;
+  }
+
+  /**
+   * Pinta el cambio al momento y lo manda a la hoja. Si la hoja lo rechaza o no hay conexión,
+   * vuelve a como estaba y avisa. Devuelve la respuesta de la hoja (o null si falló).
+   */
+  async function conCambioInstantaneo(cambio, accion, datos, mensajeOk, mensajeError) {
+    const antes = panelAbierto === 'panelPresupuestos' ? vista : null;
+    if (antes) pintarPresupuestos(resumenConCambio(antes, cambio), '');
+    if (mensajeOk) toast(mensajeOk);
+    try {
+      const r = await llamar(accion, datos);
+      if (!r.ok) throw new Error(r.error);
+      if (r.resumen && r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
+      if (r.resumen && panelAbierto === 'panelPresupuestos' && vista && vista.mes === r.resumen.mes) pintarPresupuestos(r.resumen, '');
+      return r;
+    } catch (e) {
+      if (antes && panelAbierto === 'panelPresupuestos') pintarPresupuestos(antes, '');
+      toast(`${mensajeError}: ${e instanceof ErrorRed ? 'sin conexión' : e.message}`, 4500);
+      return null;
+    }
   }
 
   /** Clics dentro de un editor de nota (en la tarjeta o en el panel). Devuelve true si lo ha atendido. */
@@ -407,13 +477,10 @@
     if (!actual) return;
     const { mov, pendiente } = actual;
     if (pendiente) { quitarDeCola(mov.id); cerrarTarjeta(); toast('Apunte borrado'); return; }
-    try {
-      const r = await llamar('undo', { id: mov.id, hoy: hoy() });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      guardarResumen(r.resumen);
-      cerrarTarjeta();
-      toast('Apunte borrado');
-    } catch (e) { toast('Sin conexión: no he podido borrarlo. Bórralo luego en la hoja.', 4500); }
+    cerrarTarjeta(); // al instante; si la hoja no puede borrarlo, la tarjeta vuelve
+    const r = await conCambioInstantaneo({ tipo: 'borrar', id: mov.id }, 'undo', { id: mov.id, hoy: hoy() },
+      'Apunte borrado', 'No he podido borrarlo');
+    if (!r) mostrarApunte(mov, false);
   }
 
   function mostrarSelector() {
@@ -429,15 +496,15 @@
   async function cambiarCategoria(nombre) {
     if (!actual || nombre === actual.mov.categoria) { $('#selectorCategorias').hidden = true; return; }
     const mov = actual.mov;
-    try {
-      const r = await llamar('recategorize', { id: mov.id, categoria: nombre, hoy: hoy() });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      guardarResumen(r.resumen);
-      const aEmpresa = nombre === CATEGORIA_POR_COBRAR;
-      const tipo = aEmpresa ? TIPO_POR_COBRAR : (mov.tipo === TIPO_POR_COBRAR ? 'Gasto' : mov.tipo);
-      mostrarApunte(Object.assign({}, mov, { categoria: nombre, tipo }), false);
-      toast(aEmpresa ? 'Pasado a pendiente de cobrar: no cuenta en tus presupuestos' : `Movido a ${nombre}. La próxima vez lo recordaré.`);
-    } catch (e) { toast('Sin conexión: no he podido cambiarlo.'); }
+    const aEmpresa = nombre === CATEGORIA_POR_COBRAR;
+    const tipo = aEmpresa ? TIPO_POR_COBRAR : (mov.tipo === TIPO_POR_COBRAR ? 'Gasto' : mov.tipo);
+    mostrarApunte(Object.assign({}, mov, { categoria: nombre, tipo }), false); // al instante
+    const r = await conCambioInstantaneo({ tipo: 'mover', id: mov.id, categoria: nombre }, 'recategorize',
+      { id: mov.id, categoria: nombre, hoy: hoy() },
+      aEmpresa ? 'Pasado a pendiente de cobrar: no cuenta en tus presupuestos' : `Movido a ${nombre}. La próxima vez lo recordaré.`,
+      'No he podido cambiarlo');
+    if (r) { if (actual && actual.mov.id === mov.id) mostrarApunte(actual.mov, false); } // barra con datos de la hoja
+    else if (actual && actual.mov.id === mov.id) mostrarApunte(mov, false);
   }
 
   /* ───────── Panel de presupuestos ───────── */
@@ -648,43 +715,29 @@
   async function marcarCobrado(id) {
     const m = apunteDeLaVista(id);
     if (!m) return;
-    try {
-      const r = await llamar('collected', { id, hoy: hoy(), mes: vista.mes });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
-      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
-      vibrar(20);
-      toast(`«${m.concepto}» marcado como cobrado`);
-    } catch (e) { toast('Sin conexión: no he podido marcarlo.', 4000); }
+    vibrar(20);
+    await conCambioInstantaneo({ tipo: 'cobrado', id }, 'collected', { id, hoy: hoy(), mes: vista.mes },
+      `«${m.concepto}» marcado como cobrado`, 'No he podido marcarlo');
   }
 
   async function borrarApunte(id) {
     const m = apunteDeLaVista(id);
     if (!m) return;
     if (!confirm(`¿Borrar «${m.concepto}» de ${eur(m.importe)} (${fechaCorta(m.fecha)})?\nSe quita también de la hoja.`)) return;
-    try {
-      const r = await llamar('undo', { id, hoy: hoy(), mes: vista.mes });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
-      if (actual && actual.mov.id === id) cerrarTarjeta();
-      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
-      vibrar(20);
-      toast('Apunte borrado');
-    } catch (e) { toast('Sin conexión: no he podido borrarlo.', 4000); }
+    vibrar(20);
+    if (actual && actual.mov.id === id) cerrarTarjeta();
+    await conCambioInstantaneo({ tipo: 'borrar', id }, 'undo', { id, hoy: hoy(), mes: vista.mes },
+      'Apunte borrado', 'No he podido borrarlo');
   }
 
   async function moverApunte(id, categoria) {
     moviendo = null;
     const m = apunteDeLaVista(id);
     if (!m || normalizar(m.categoria) === normalizar(categoria)) { pintarPresupuestos(vista, ''); return; }
-    try {
-      const r = await llamar('recategorize', { id, categoria, hoy: hoy(), mes: vista.mes });
-      if (!r.ok) { toast(r.error, 4000); return; }
-      if (r.resumen.mes === mesActualIso()) guardarResumen(r.resumen);
-      if (panelAbierto === 'panelPresupuestos') pintarPresupuestos(r.resumen, '');
-      toast(categoria === CATEGORIA_POR_COBRAR ? 'Pasado a pendiente de cobrar: ya no cuenta en tus presupuestos'
-        : `Movido a ${categoria}. La próxima vez lo recordaré.`);
-    } catch (e) { toast('Sin conexión: no he podido moverlo.', 4000); }
+    await conCambioInstantaneo({ tipo: 'mover', id, categoria }, 'recategorize', { id, categoria, hoy: hoy(), mes: vista.mes },
+      categoria === CATEGORIA_POR_COBRAR ? 'Pasado a pendiente de cobrar: ya no cuenta en tus presupuestos'
+        : `Movido a ${categoria}. La próxima vez lo recordaré.`,
+      'No he podido moverlo');
   }
 
   $('#cuerpoPres').addEventListener('click', (e) => {
