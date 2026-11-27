@@ -19,7 +19,8 @@ var TIPO_COBRADO = 'Cobrado';
 var CATEGORIAS_POR_DEFECTO = [
   { nombre: 'Supermercado', presupuesto: 300, palabras: ['super', 'supermercado', 'mercadona', 'carrefour', 'lidl', 'aldi', 'alcampo', 'eroski', 'hipercor', 'consum', 'ahorramas', 'la compra', 'fruta', 'fruteria', 'carniceria', 'pescaderia', 'panaderia', 'pan', 'leche'] },
   { nombre: 'Transporte', presupuesto: 150, palabras: ['gasolina', 'gasoil', 'gasoleo', 'diesel', 'combustible', 'repostar', 'parking', 'aparcamiento', 'peaje', 'autopista', 'metro', 'bus', 'autobus', 'taxi', 'uber', 'cabify', 'bolt', 'tren', 'renfe', 'cercanias', 'itv', 'taller', 'mecanico', 'neumaticos', 'lavado', 'abono transporte'] },
-  { nombre: 'Restaurantes y ocio', presupuesto: 150, palabras: ['restaurante', 'bar', 'cena', 'cenar', 'comer fuera', 'comida fuera', 'almuerzo', 'desayuno', 'cafe', 'cerveza', 'cana', 'copa', 'tapas', 'menu', 'pizza', 'hamburguesa', 'burger', 'kebab', 'sushi', 'glovo', 'just eat', 'cine', 'concierto', 'teatro', 'entradas', 'museo', 'fiesta'] },
+  { nombre: 'Restaurantes y ocio', presupuesto: 150, palabras: ['restaurante', 'bar', 'cena', 'cenar', 'comer fuera', 'comida fuera',
+    'comida', 'comer', 'amigos', 'colegas', 'familia', 'tomar algo', 'almuerzo', 'desayuno', 'cafe', 'cerveza', 'cana', 'copa', 'tapas', 'menu', 'pizza', 'hamburguesa', 'burger', 'kebab', 'sushi', 'glovo', 'just eat', 'cine', 'concierto', 'teatro', 'entradas', 'museo', 'fiesta'] },
   { nombre: 'Casa', presupuesto: 700, palabras: ['alquiler', 'hipoteca', 'luz', 'electricidad', 'agua', 'gas', 'butano', 'internet', 'fibra', 'wifi', 'comunidad', 'ibi', 'seguro hogar', 'ikea', 'leroy merlin', 'muebles', 'ferreteria', 'limpieza', 'fontanero', 'electricista'] },
   { nombre: 'Salud', presupuesto: 60, palabras: ['farmacia', 'medicamentos', 'medicinas', 'medico', 'dentista', 'optica', 'gafas', 'lentillas', 'fisio', 'fisioterapeuta', 'psicologo', 'analisis', 'seguro medico', 'hospital'] },
   { nombre: 'Ropa', presupuesto: 80, palabras: ['ropa', 'zapatos', 'zapatillas', 'camiseta', 'camisa', 'pantalon', 'pantalones', 'vestido', 'chaqueta', 'abrigo', 'zara', 'primark', 'decathlon', 'calcetines'] },
@@ -198,15 +199,43 @@ function clavesDeCategoria(c) {
   return claves;
 }
 
-/** Busca la palabra clave más larga que aparezca en el texto. */
+/**
+ * Raíz sencilla de una palabra para comparar sin fijarse en plural ni en masculino/femenino:
+ * amigo, amiga, amigos, amigas -> "amig"; caña, cañas -> "cana"; bar, bares -> "bar".
+ * Las palabras cortas (≤ 4 letras) se dejan casi tal cual para no confundir «cine» con «cina».
+ */
+function raiz(w) {
+  if (w.length > 4 && /[^aeiou]es$/.test(w)) w = w.slice(0, -2);
+  else if (w.length > 3 && /s$/.test(w)) w = w.slice(0, -1);
+  if (w.length > 4 && /[aeo]$/.test(w)) w = w.slice(0, -1);
+  return w;
+}
+
+function raices(textoNorm) {
+  return textoNorm.split(/[^a-z0-9&'.]+/).map(function (w) { return limpiarBordes(w); })
+    .filter(Boolean).map(raiz);
+}
+
+/** ¿Aparece la secuencia de raíces `aguja` seguida dentro de `pajar`? */
+function contieneSecuencia(pajar, aguja) {
+  if (!aguja.length) return false;
+  for (var i = 0; i + aguja.length <= pajar.length; i++) {
+    var j = 0;
+    while (j < aguja.length && pajar[i + j] === aguja[j]) j++;
+    if (j === aguja.length) return true;
+  }
+  return false;
+}
+
+/** Busca la palabra clave más larga que aparezca en el texto (sin importar plural ni género). */
 function buscarCategoria(textoNorm, categorias) {
-  var hueco = ' ' + textoNorm + ' ';
+  var texto = raices(textoNorm);
   var mejor = null, mejorPeso = 0;
   categorias.forEach(function (c) {
     clavesDeCategoria(c).forEach(function (k) {
       var kn = limpiarBordes(normalizar(k).trim()).replace(/\s+/g, ' ');
       if (kn.length < 2 || kn.length <= mejorPeso) return;
-      if (hueco.indexOf(' ' + kn + ' ') >= 0 || hueco.indexOf(' ' + kn + 's ') >= 0 || hueco.indexOf(' ' + kn + 'es ') >= 0) {
+      if (contieneSecuencia(texto, raices(kn))) {
         mejorPeso = kn.length;
         mejor = c.nombre;
       }

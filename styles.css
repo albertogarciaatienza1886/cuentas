@@ -134,6 +134,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .t-cab { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ok); }
 .t-cab svg { width: 18px; height: 18px; }
 .t-cab.pendiente { color: var(--aviso); }
+.t-cab.guardando { color: var(--suave); }
+.giro-mini {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid var(--borde); border-top-color: var(--acento); animation: girar .8s linear infinite;
+}
 .t-cab.error { color: var(--peligro); }
 .t-cab .t-fecha { color: var(--suave); font-weight: 500; }
 .t-importe { font-size: 40px; font-weight: var(--titulos); letter-spacing: -.03em; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }

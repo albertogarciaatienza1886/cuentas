@@ -238,56 +238,66 @@
     if (!previo.ok) { mostrarError(previo.error, texto); return; }
 
     const item = { texto, hoy: fecha, idCliente: nuevoId() };
-    estado('enviando');
+    const provisional = { id: item.idCliente, fecha: previo.fecha, tipo: previo.tipo, importe: previo.importe,
+      categoria: previo.categoria, concepto: previo.concepto, nota: previo.nota };
+    // La tarjeta sale ya con lo que ha entendido el móvil; la hoja lo confirma por detrás (~2 s).
+    mostrarApunte(provisional, false, true);
+    vibrar([20, 40, 20]);
+    const sigueEnPantalla = () => actual && actual.mov.id === item.idCliente && !$('#tarjeta').hidden;
     try {
       const r = await llamar('add', item);
-      estado('');
       if (!r.ok) {
-        if (r.codigo === 'clave') { mostrarError(r.error, texto); return; }
-        mostrarError(r.error, texto);
+        if (sigueEnPantalla()) mostrarError(r.error, texto);
+        else toast(`No se pudo apuntar «${texto}»: ${r.error}`, 5000);
         return;
       }
       guardarResumen(r.resumen);
-      mostrarApunte(r.movimiento, false);
-      vibrar([20, 40, 20]);
+      if (sigueEnPantalla()) mostrarApunte(r.movimiento, false);
     } catch (e) {
-      estado('');
       if (!(e instanceof ErrorRed)) throw e;
       encolar(item);
-      mostrarApunte({ id: item.idCliente, fecha: previo.fecha, tipo: previo.tipo, importe: previo.importe, categoria: previo.categoria, concepto: previo.concepto, nota: previo.nota }, true);
+      if (sigueEnPantalla()) mostrarApunte(provisional, true);
       vibrar(30);
     }
   }
 
-  function mostrarApunte(mov, pendiente) {
-    actual = { mov, pendiente };
+  /**
+   * Tarjeta del último apunte.
+   * pendiente: sin conexión, guardado en la cola · guardando: enviado a la hoja, esperando respuesta.
+   */
+  function mostrarApunte(mov, pendiente, guardando) {
+    actual = { mov, pendiente, guardando: !!guardando };
     const ingreso = mov.tipo === 'Ingreso';
     const r = resumenCache();
     const cat = !pendiente && r && r.categorias ? r.categorias.find((c) => c.nombre === mov.categoria) : null;
     const fecha = mov.fecha !== hoy() ? `<span class="t-fecha">· ${esc(fechaCorta(mov.fecha))}</span>` : '';
     let estadoCat = '';
     if (cat && !cat.huerfana && (cat.presupuesto || cat.acumula) && !ingreso) {
-      const ec = estadoCategoria(cat, r.dia / r.diasMes);
+      // Mientras se guarda, el resumen guardado aún no incluye este gasto: se suma a mano.
+      const conEste = Object.assign({}, cat, { gastado: cat.gastado + (guardando && mov.tipo === 'Gasto' ? mov.importe : 0) });
+      const ec = estadoCategoria(conEste, r.dia / r.diasMes);
       estadoCat = `
-        <div class="t-estado"><span>${esc(cat.nombre)} este mes</span><span><b>${eur(cat.gastado)}</b> de ${eur(cat.presupuesto)}</span></div>
-        <div class="barra ${ec}"><i style="width:${anchoBarra(cat, ec)}%"></i>
+        <div class="t-estado"><span>${esc(cat.nombre)} este mes</span><span><b>${eur(conEste.gastado)}</b> de ${eur(cat.presupuesto)}</span></div>
+        <div class="barra ${ec}"><i style="width:${anchoBarra(conEste, ec)}%"></i>
           <span class="ritmo" style="left:${(r.dia / r.diasMes) * 100}%"></span></div>`;
     }
+    let cabecera;
+    if (pendiente) cabecera = ICONOS.nube + 'Sin conexión · se enviará solo';
+    else if (guardando) cabecera = '<span class="giro-mini" aria-hidden="true"></span>Guardando en tu hoja…';
+    else cabecera = ICONOS.check + (ingreso ? 'Ingreso apuntado' : mov.tipo === TIPO_POR_COBRAR ? 'Apuntado · lo paga la empresa' : 'Apuntado');
+    const bloqueado = guardando ? 'disabled' : '';
     $('#transcripcion').textContent = '';
     pintarTarjeta(`
-      <div class="t-cab ${pendiente ? 'pendiente' : ''}">
-        ${pendiente ? ICONOS.nube + 'Sin conexión · se enviará solo' : ICONOS.check + (ingreso ? 'Ingreso apuntado'
-          : mov.tipo === TIPO_POR_COBRAR ? 'Apuntado · lo paga la empresa' : 'Apuntado')} ${fecha}
-      </div>
+      <div class="t-cab ${pendiente ? 'pendiente' : guardando ? 'guardando' : ''}">${cabecera} ${fecha}</div>
       <div class="t-importe ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : ''}${eur(mov.importe)}</div>
       <div class="t-concepto">${esc(mov.concepto)}</div>
       ${mov.nota ? `<div class="t-nota">${ICONOS.nota}${esc(mov.nota)}</div>` : ''}
-      <div class="t-meta"><button class="chip" type="button" data-accion="cambiar" ${pendiente || ingreso ? 'disabled' : ''}>${ICONOS.etiqueta}${esc(mov.categoria)}</button></div>
+      <div class="t-meta"><button class="chip" type="button" data-accion="cambiar" ${pendiente || ingreso || guardando ? 'disabled' : ''}>${ICONOS.etiqueta}${esc(mov.categoria)}</button></div>
       ${estadoCat}
       <div class="t-acciones">
-        <button class="btn-sec" type="button" data-accion="deshacer">${ICONOS.deshacer}Deshacer</button>
-        ${pendiente || ingreso ? '' : `<button class="btn-sec" type="button" data-accion="cambiar">${ICONOS.etiqueta}Categoría</button>`}
-        ${pendiente ? '' : `<button class="btn-sec" type="button" data-accion="nota">${ICONOS.lapiz}Nota</button>`}
+        <button class="btn-sec" type="button" data-accion="deshacer" ${bloqueado}>${ICONOS.deshacer}Deshacer</button>
+        ${pendiente || ingreso ? '' : `<button class="btn-sec" type="button" data-accion="cambiar" ${bloqueado}>${ICONOS.etiqueta}Categoría</button>`}
+        ${pendiente ? '' : `<button class="btn-sec" type="button" data-accion="nota" ${bloqueado}>${ICONOS.lapiz}Nota</button>`}
       </div>
       <div class="t-categorias" id="selectorCategorias" hidden></div>
       <div id="editorNotaTarjeta"></div>`);
@@ -447,7 +457,8 @@
   }
   window.addEventListener('popstate', () => { if (panelAbierto) cerrarPanel(true); });
 
-  let vista = null;            // resumen que se ve ahora en el panel
+  let vista = null;
+  const resumenesVistos = {}; // "yyyy-mm" -> último resumen de ese mes visto en esta sesión            // resumen que se ve ahora en el panel
   let mesMostrado = '';        // "yyyy-mm" pedido (aunque aún no haya llegado)
   let moviendo = null;         // id del apunte con el selector de categoría abierto
   const abiertas = new Set();  // categorías desplegadas
@@ -468,7 +479,8 @@
     mesMostrado = mes;
     moviendo = null;
     const cuerpo = $('#cuerpoPres');
-    const cache = mes === mesActualIso() ? resumenCache() : null;
+    // Lo último que se vio de ese mes sale al instante; luego se refresca con la hoja.
+    const cache = mes === mesActualIso() ? resumenCache() : (resumenesVistos[mes] || null);
     if (cache && cache.mes === mes) pintarPresupuestos(cache, 'Actualizando…');
     else {
       pintarNavMes({ mes, mesActual: mesActualIso(), mesInicio: vista ? vista.mesInicio : mes, mesNombre: nombreMes(mes) });
@@ -538,6 +550,7 @@
 
   function pintarPresupuestos(r, aviso) {
     vista = r;
+    resumenesVistos[r.mes] = r;
     pintarNavMes(r);
     const ritmo = r.dia / r.diasMes;
     const quedan = r.total.presupuesto - r.total.gastado;

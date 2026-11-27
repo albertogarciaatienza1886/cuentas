@@ -1,5 +1,6 @@
-// Service worker: permite abrir la app sin conexión. Primero red, si falla, caché.
-const CACHE = 'cuentas-v1';
+// Service worker: la app abre al instante con lo guardado en el móvil y, por detrás, se descarga la
+// versión nueva para la próxima vez («stale-while-revalidate»). Sin conexión también abre.
+const CACHE = 'cuentas-v2';
 const ARCHIVOS = ['./', './index.html', './styles.css', './app.js', './parser.js', './mock.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
@@ -16,14 +17,17 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
+  // Solo los archivos de la propia app; las llamadas a la hoja (Google) van siempre directas.
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copia = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copia));
-        return res;
-      })
-      .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('./index.html')))
-  );
+  e.respondWith(caches.open(CACHE).then(async (cache) => {
+    const guardado = await cache.match(req, { ignoreSearch: true });
+    const deRed = fetch(req)
+      .then((res) => { if (res && res.ok) cache.put(req, res.clone()); return res; })
+      .catch(() => null);
+    if (guardado) {
+      e.waitUntil(deRed); // actualiza en segundo plano
+      return guardado;
+    }
+    return (await deRed) || (await cache.match('./index.html')) || Response.error();
+  }));
 });
