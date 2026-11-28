@@ -12,6 +12,8 @@ var CATEGORIA_INGRESOS = 'Ingresos';
 var CATEGORIA_POR_COBRAR = 'Pendiente de cobrar';
 var TIPO_POR_COBRAR = 'Por cobrar';
 var TIPO_COBRADO = 'Cobrado';
+// Dinero extra que se suma a un presupuesto ese mes («400 € para gastar en caprichos»). No es un gasto.
+var TIPO_EXTRA = 'Extra';
 
 // Solo se usan para crear la hoja la primera vez y en el modo demo.
 // Después, las categorías, presupuestos y palabras clave se cambian en la
@@ -46,7 +48,7 @@ var CENTIMOS = ['centimo', 'centimos', 'cents', 'centavos'];
 var RELLENO_INICIO = ['he', 'me', 'ha', 'han', 'hemos', 'gastado', 'gaste', 'gastar', 'gasto', 'gastos', 'pagado', 'pague', 'pagar', 'pago',
   'apunta', 'apuntame', 'apuntar', 'anota', 'anotame', 'anotar', 'pon', 'ponme', 'acabo', 'de', 'en', 'el', 'la', 'los', 'las', 'lo',
   'un', 'una', 'unos', 'unas', 'por', 'para', 'del', 'al', 'a', 'y', 'con', 'que', 'es', 'son', 'fue', 'ingresado', 'ingresaron',
-  'ingreso', 'ingresan', 'cobrado', 'cobre', 'cobro', 'total', 'vale', 'oye', 'hola', 'euro', 'euros'];
+  'ingreso', 'ingresan', 'cobrado', 'cobre', 'cobro', 'total', 'vale', 'oye', 'hola', 'euro', 'euros', 'extra', 'mas'];
 var RELLENO_FINAL = ['en', 'de', 'del', 'por', 'para', 'y', 'con', 'a', 'al', 'el', 'la', 'los', 'las', 'que', 'un', 'una', 'hoy', 'euro', 'euros'];
 
 function normalizar(texto) {
@@ -274,20 +276,62 @@ function mesSiguiente(mes) {
 }
 
 /**
- * Presupuesto acumulado que llega a `mes` en una categoría acumulativa: lo que no se gasta un mes
- * se suma al siguiente y lo que te pasas se resta, en cadena (el saldo puede quedar en negativo).
+ * Presupuesto acumulado que llega a `mes` en una categoría acumulativa, en cadena mes a mes.
+ * Normal: lo que sobra se suma al siguiente y lo que te pasas se resta (puede quedar en negativo).
+ * soloNegativo: lo que sobra se ahorra y no pasa; solo se arrastra lo que te pasas.
  * @param {number} base         presupuesto mensual
- * @param {Object} gastoPorMes  {"2026-10": 120.5, ...}
+ * @param {Object} gastoPorMes  {"2026-10": 120.5, ...}  gasto neto del mes (gastos − extras)
  * @param {string} mesInicio    mes desde el que se acumula ("yyyy-mm"): el primero con apuntes,
  *                              o el de «Acumular desde» si es posterior
  * @param {string} mes          mes que se consulta ("yyyy-mm")
+ * @param {boolean} soloNegativo
  */
-function saldoAcumulado(base, gastoPorMes, mesInicio, mes) {
+function saldoAcumulado(base, gastoPorMes, mesInicio, mes, soloNegativo) {
   var saldo = 0;
   for (var m = mesInicio; m && m < mes; m = mesSiguiente(m)) {
     saldo += base - (gastoPorMes[m] || 0);
+    if (soloNegativo && saldo > 0) saldo = 0;
   }
   return redondear2(saldo);
+}
+
+/** «Acumula al mes siguiente» de la hoja -> 'todo' | 'negativo' | 'no'. Acepta las antiguas casillas (TRUE/FALSE). */
+function modoAcumula(valor) {
+  if (valor === true) return 'todo';
+  var v = normalizar(String(valor == null ? '' : valor)).trim();
+  if (/negativ/.test(v)) return 'negativo';
+  if (/^(si|x|true|1|todo)$/.test(v)) return 'todo';
+  return 'no';
+}
+
+/** Categoría que se nombra en el texto por su nombre («caprichos», «vida social», «sara»…), no por sus palabras clave. */
+function categoriaNombrada(textoNorm, categorias) {
+  var texto = raices(textoNorm);
+  var mejor = null, peso = 0;
+  categorias.forEach(function (c) {
+    var nombre = normalizar(c.nombre).replace(/[^a-z0-9]+/g, ' ').trim();
+    var frases = [nombre].concat(nombre.split(' ').filter(function (p) { return p.length >= 4 && !contiene(PALABRAS_GENERICAS, p); }));
+    frases.forEach(function (f) {
+      if (f.length > peso && contieneSecuencia(texto, raices(f))) { peso = f.length; mejor = c.nombre; }
+    });
+  });
+  return mejor;
+}
+
+/**
+ * ¿Es dinero extra para un presupuesto? «400 € para gastar en caprichos», «150 € extra para vida social»,
+ * «añade 400 a caprichos». Sin presupuesto nombrado, «para gastar» va a Caprichos.
+ * Devuelve { categoria } (null si no hay a dónde) o null si no es un extra.
+ */
+function detectarExtra(textoNorm, categorias) {
+  var t = ' ' + textoNorm + ' ';
+  var nombrada = categoriaNombrada(textoNorm, categorias);
+  var paraGastar = /\spara gastar\s/.test(t);
+  var masPara = /\s(extra|de mas|mas)\s/.test(t) && /\spara\s/.test(t);
+  var anade = /\s(anade|anadir|anadele|suma|sumar|sumale|ingresa|ingresar|aumenta|aumentar)\s/.test(t) && /\s(a|al|en)\s/.test(t);
+  if (!(paraGastar || ((masPara || anade) && nombrada))) return null;
+  var caprichos = (categorias || []).filter(function (c) { return /^capricho/.test(normalizar(c.nombre)); })[0];
+  return { categoria: nombrada || (caprichos ? caprichos.nombre : null) };
 }
 
 var PATRON_POR_COBRAR = '(?:^|[\\s,.;:]+)(?:(?:y\\s+)?(?:pendiente\\s+de|a|por)\\s+cobrar(?:\\s+(?:de|a)\\s+la\\s+empresa)?' +
@@ -353,9 +397,17 @@ function interpretarFrase(texto, opciones) {
   if (/\sme (han |ha )?(cobrado|cobraron|cobran|cobra)\s/.test(normTodo)) esIngreso = false;
   if (porCobrar) esIngreso = false;
 
+  var extra = porCobrar ? null : detectarExtra(normTodo.trim(), categorias);
+  if (extra) {
+    if (!extra.categoria) {
+      return { ok: false, texto: original, error: '¿A qué presupuesto va el extra? Di, por ejemplo, «400 € para gastar en caprichos».' };
+    }
+    esIngreso = false;
+  }
+
   var normSinImporte = toks.filter(function (t, idx) { return !usados[idx]; })
     .map(function (t) { return t.n; }).join(' ');
-  var categoria = porCobrar ? CATEGORIA_POR_COBRAR : esIngreso ? CATEGORIA_INGRESOS
+  var categoria = extra ? extra.categoria : porCobrar ? CATEGORIA_POR_COBRAR : esIngreso ? CATEGORIA_INGRESOS
     : (buscarCategoria(normSinImporte, categorias) || categoriaResto(categorias));
 
   var resto = toks.filter(function (t, idx) { return !usados[idx]; });
@@ -363,12 +415,13 @@ function interpretarFrase(texto, opciones) {
   while (resto.length && contiene(RELLENO_FINAL, resto[resto.length - 1].n)) resto.pop();
   var concepto = resto.map(function (t) { return t.o; }).join(' ')
     .replace(/^[\s,.;:¡!¿?"'()\-]+|[\s,.;:¡!¿?"'()\-]+$/g, '');
+  if (extra) concepto = 'Extra para ' + categoria;
   if (!concepto) concepto = esIngreso ? 'Ingreso' : categoria;
   concepto = concepto.charAt(0).toUpperCase() + concepto.slice(1);
 
   return {
     ok: true,
-    tipo: porCobrar ? TIPO_POR_COBRAR : esIngreso ? 'Ingreso' : 'Gasto',
+    tipo: extra ? TIPO_EXTRA : porCobrar ? TIPO_POR_COBRAR : esIngreso ? 'Ingreso' : 'Gasto',
     importe: redondear2(importe.valor),
     categoria: categoria,
     concepto: concepto,
@@ -391,6 +444,8 @@ if (typeof module !== 'undefined' && module.exports) {
     CATEGORIA_OTROS: CATEGORIA_OTROS,
     CATEGORIA_POR_COBRAR: CATEGORIA_POR_COBRAR,
     TIPO_POR_COBRAR: TIPO_POR_COBRAR,
+    TIPO_EXTRA: TIPO_EXTRA,
+    modoAcumula: modoAcumula,
     CATEGORIA_INGRESOS: CATEGORIA_INGRESOS
   };
 }

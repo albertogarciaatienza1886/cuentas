@@ -39,7 +39,8 @@
     papelera: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
     flecha: '<svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
     ciclo: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>',
-    nota: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4Z"/></svg>'
+    nota: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4Z"/></svg>',
+    mas: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>'
   };
 
   /* ───────── Avisos ───────── */
@@ -147,8 +148,10 @@
   }
 
   /** Lo que pasa al mes siguiente en las categorías acumulativas (negativo si te pasaste). */
-  const sobranteAcumulable = (r) => r.categorias.filter((c) => c.acumula)
-    .reduce((s, c) => s + c.presupuesto - c.gastado, 0);
+  const sobranteAcumulable = (r) => r.categorias.filter((c) => c.acumula).reduce((s, c) => {
+    const resto = c.presupuesto - c.gastado;
+    return s + (c.modoAcumula === 'negativo' ? Math.min(0, resto) : resto); // «Solo lo negativo»: lo que sobra se ahorra
+  }, 0);
   const acumuladoTotal = (r) => r.categorias.reduce((s, c) => s + (c.acumulado || 0), 0);
 
   /* ───────── Voz: escuchar ───────── */
@@ -268,28 +271,33 @@
   function mostrarApunte(mov, pendiente, guardando) {
     actual = { mov, pendiente, guardando: !!guardando };
     const ingreso = mov.tipo === 'Ingreso';
+    const extra = mov.tipo === TIPO_EXTRA;
     const r = resumenCache();
     const cat = !pendiente && r && r.categorias ? r.categorias.find((c) => c.nombre === mov.categoria) : null;
     const fecha = mov.fecha !== hoy() ? `<span class="t-fecha">· ${esc(fechaCorta(mov.fecha))}</span>` : '';
     let estadoCat = '';
-    if (cat && !cat.huerfana && (cat.presupuesto || cat.acumula) && !ingreso) {
-      // Mientras se guarda, el resumen guardado aún no incluye este gasto: se suma a mano.
-      const conEste = Object.assign({}, cat, { gastado: cat.gastado + (guardando && mov.tipo === 'Gasto' ? mov.importe : 0) });
+    if (cat && !cat.huerfana && (cat.presupuesto || cat.acumula || extra) && !ingreso) {
+      // Mientras se guarda, el resumen guardado aún no incluye este apunte: se suma a mano.
+      const conEste = Object.assign({}, cat, {
+        gastado: cat.gastado + (guardando && mov.tipo === 'Gasto' ? mov.importe : 0),
+        presupuesto: cat.presupuesto + (guardando && extra ? mov.importe : 0)
+      });
       const ec = estadoCategoria(conEste, r.dia / r.diasMes);
       estadoCat = `
-        <div class="t-estado"><span>${esc(cat.nombre)} este mes</span><span><b>${eur(conEste.gastado)}</b> de ${eur(cat.presupuesto)}</span></div>
+        <div class="t-estado"><span>${esc(cat.nombre)} este mes</span><span><b>${eur(conEste.gastado)}</b> de ${eur(conEste.presupuesto)}</span></div>
         <div class="barra ${ec}"><i style="width:${anchoBarra(conEste, ec)}%"></i>
           <span class="ritmo" style="left:${(r.dia / r.diasMes) * 100}%"></span></div>`;
     }
     let cabecera;
     if (pendiente) cabecera = ICONOS.nube + 'Sin conexión · se enviará solo';
     else if (guardando) cabecera = '<span class="giro-mini" aria-hidden="true"></span>Guardando en tu hoja…';
-    else cabecera = ICONOS.check + (ingreso ? 'Ingreso apuntado' : mov.tipo === TIPO_POR_COBRAR ? 'Apuntado · lo paga la empresa' : 'Apuntado');
+    else cabecera = ICONOS.check + (ingreso ? 'Ingreso apuntado' : extra ? `Sumado a ${esc(mov.categoria)}`
+      : mov.tipo === TIPO_POR_COBRAR ? 'Apuntado · lo paga la empresa' : 'Apuntado');
     const bloqueado = guardando ? 'disabled' : '';
     $('#transcripcion').textContent = '';
     pintarTarjeta(`
       <div class="t-cab ${pendiente ? 'pendiente' : guardando ? 'guardando' : ''}">${cabecera} ${fecha}</div>
-      <div class="t-importe ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : ''}${eur(mov.importe)}</div>
+      <div class="t-importe ${ingreso || extra ? 'ingreso' : ''}">${ingreso || extra ? '+' : ''}${eur(mov.importe)}</div>
       <div class="t-concepto">${esc(mov.concepto)}</div>
       ${mov.nota ? `<div class="t-nota">${ICONOS.nota}${esc(mov.nota)}</div>` : ''}
       <div class="t-meta"><button class="chip" type="button" data-accion="cambiar" ${pendiente || ingreso || guardando ? 'disabled' : ''}>${ICONOS.etiqueta}${esc(mov.categoria)}</button></div>
@@ -360,10 +368,19 @@
       if (cat) cat.gastado = redondear2(cat.gastado + delta);
       c.total.gastado = redondear2(c.total.gastado + delta);
     };
+    const sumarExtra = (categoria, delta) => {
+      const cat = c.categorias.find((x) => normalizar(x.nombre) === normalizar(categoria));
+      if (cat) {
+        cat.extra = redondear2((cat.extra || 0) + delta);
+        cat.presupuesto = redondear2(cat.presupuesto + delta);
+      }
+      c.total.presupuesto = redondear2(c.total.presupuesto + delta);
+    };
     const quitar = () => {
       if (iMes >= 0) {
         c.movimientos.splice(iMes, 1);
         if (m.tipo === 'Ingreso') c.ingresos = redondear2(c.ingresos - m.importe);
+        else if (m.tipo === TIPO_EXTRA) sumarExtra(m.categoria, -m.importe);
         else sumarGasto(m.categoria, -m.importe);
       } else {
         c.porCobrar.movimientos.splice(iCobrar, 1);
@@ -387,7 +404,8 @@
       } else if (nuevo.fecha.slice(0, 7) === c.mes) {
         c.movimientos.push(nuevo);
         c.movimientos.sort(masRecienteMov);
-        sumarGasto(nuevo.categoria, nuevo.importe);
+        if (nuevo.tipo === TIPO_EXTRA) sumarExtra(nuevo.categoria, nuevo.importe);
+        else sumarGasto(nuevo.categoria, nuevo.importe);
       }
     }
     return c;
@@ -487,7 +505,8 @@
     if (!actual || actual.pendiente) return;
     const sel = $('#selectorCategorias');
     if (!sel.hidden) { sel.hidden = true; return; }
-    const nombres = categoriasCache().map((c) => c.nombre).concat(CATEGORIA_POR_COBRAR);
+    // Un extra se puede pasar a otro presupuesto, pero no a «Pendiente de cobrar».
+    const nombres = categoriasCache().map((c) => c.nombre).concat(actual.mov.tipo === TIPO_EXTRA ? [] : [CATEGORIA_POR_COBRAR]);
     sel.innerHTML = nombres.map((n) =>
       `<button class="chip ${n === actual.mov.categoria ? 'activa' : ''}" type="button" data-categoria="${esc(n)}">${esc(n)}</button>`).join('');
     sel.hidden = false;
@@ -581,9 +600,11 @@
   function filaMovimiento(m, conCategoria) {
     const ingreso = m.tipo === 'Ingreso';
     const porCobrar = m.tipo === TIPO_POR_COBRAR;
+    const extra = m.tipo === TIPO_EXTRA;
+    const positivo = ingreso || extra;
     // Un gasto se puede pasar a «Pendiente de cobrar»; uno de la empresa, devolver a un presupuesto.
     const cats = (vista ? vista.categorias : categoriasCache()).filter((c) => !c.huerfana)
-      .concat(porCobrar ? [] : [{ nombre: CATEGORIA_POR_COBRAR }]);
+      .concat(porCobrar || extra ? [] : [{ nombre: CATEGORIA_POR_COBRAR }]);
     const selector = moviendo === m.id ? `
       <div class="mov-chips">${cats.map((c) => `<button class="chip ${normalizar(c.nombre) === normalizar(m.categoria) ? 'activa' : ''}"
         type="button" data-mover-a="${esc(c.nombre)}" data-id="${esc(m.id)}">${esc(c.nombre)}</button>`).join('')}</div>` : '';
@@ -592,7 +613,7 @@
         <div class="mov-txt"><div class="mov-concepto">${esc(m.concepto)}</div>
           <div class="mov-sub">${conCategoria ? esc(m.categoria) + ' · ' : ''}${esc(fechaCorta(m.fecha))}</div>
           ${m.nota ? `<div class="mov-nota">${ICONOS.nota}${esc(m.nota)}</div>` : ''}</div>
-        <div class="mov-imp ${ingreso ? 'ingreso' : ''}">${ingreso ? '+' : '−'}${eur(m.importe)}</div>
+        <div class="mov-imp ${positivo ? 'ingreso' : ''}">${positivo ? '+' : '−'}${eur(m.importe)}</div>
         <div class="mov-acciones">
           <button class="mini-btn" type="button" data-nota-editar="${esc(m.id)}" aria-label="${m.nota ? 'Cambiar la nota' : 'Añadir nota'}">${ICONOS.lapiz}</button>
           ${porCobrar ? `<button class="mini-btn ok" type="button" data-cobrado="${esc(m.id)}" aria-label="Marcar como cobrado">${ICONOS.check}</button>` : ''}
@@ -644,11 +665,14 @@
       else nota = `${r.cerrado ? 'Sobraron' : 'Quedan'} ${eur(c.presupuesto - c.gastado)}` + (e === 'ojo' ? ' · vas rápido' : '');
       let acum = '';
       if (c.acumula) {
-        let txt = 'Lo que sobre o te pases pasa al mes siguiente';
+        let txt = c.modoAcumula === 'negativo'
+          ? 'Lo que sobre se ahorra; si te pasas, se resta del mes siguiente'
+          : 'Lo que sobre o te pases pasa al mes siguiente';
         if (c.acumulado > 0) txt = `${eur(c.presupuestoBase)} + ${eur(c.acumulado)} que sobraron antes`;
         else if (c.acumulado < 0) txt = `${eur(c.presupuestoBase)} − ${eur(-c.acumulado)} que te pasaste antes`;
         acum = `<div class="cat-acum ${c.acumulado < 0 ? 'negativo' : ''}">${ICONOS.ciclo}${txt}</div>`;
       }
+      if (c.extra > 0) acum += `<div class="cat-extra">${ICONOS.mas}${eur(c.extra)} extra este mes</div>`;
       const barra = `<div class="barra"><i style="width:${anchoBarra(c, e)}%"></i>${marcaRitmo}</div>`;
       return bloqueCategoria(e, c.nombre, `<b>${eur(c.gastado)}</b> / ${eur(c.presupuesto)}`, barra,
         `<div class="cat-nota">${nota} · ${apuntes(lista.length)}</div>${acum}`, lista);
@@ -680,6 +704,8 @@
     } else if (!r.cerrado && acum < 0) {
       lineaAcum = `<div class="total-linea acum">${ICONOS.ciclo} Descuenta <b class="mal">${eur(-acum)}</b> que te pasaste en meses anteriores</div>`;
     }
+    const extras = r.categorias.reduce((s, c) => s + (c.extra || 0), 0);
+    if (extras > 0) lineaAcum += `<div class="total-linea acum">${ICONOS.mas} Incluye <b class="ingresos">${eur(extras)}</b> extra este mes</div>`;
 
     const recientes = r.cerrado ? '' : movimientos.slice(0, 8).map((m) => filaMovimiento(m, true)).join('');
 

@@ -37,7 +37,10 @@
     }));
     const categorias = JSON.parse(JSON.stringify(CATEGORIAS_POR_DEFECTO))
       .filter((c) => c.nombre !== CATEGORIA_OTROS)
-      .map((c) => Object.assign(c, { acumula: ACUMULAN.indexOf(c.nombre) >= 0 }));
+      .map((c) => Object.assign(c, {
+        acumula: ACUMULAN.indexOf(c.nombre) >= 0 || c.nombre === 'Transporte',
+        modoAcumula: ACUMULAN.indexOf(c.nombre) >= 0 ? 'todo' : c.nombre === 'Transporte' ? 'negativo' : 'no'
+      }));
     return {
       categorias,
       movimientos: mapa(mesPasado, m - 1).concat(mapa(esteMes.filter((e) => e[0] <= d), m))
@@ -58,25 +61,31 @@
     const mes = /^\d{4}-\d{2}$/.test(mesPedido || '') && mesPedido < mesActual ? mesPedido : mesActual;
     const cerrado = mes < mesActual;
     const gastoMesCat = {};
+    const extraMesCat = {};
     let mesInicio = '';
     d.movimientos.forEach((m) => {
       const mm = m.fecha.slice(0, 7);
       if (!mesInicio || mm < mesInicio) mesInicio = mm;
-      if (m.tipo !== 'Gasto') return;
-      gastoMesCat[mm] = gastoMesCat[mm] || {};
-      gastoMesCat[mm][m.categoria] = (gastoMesCat[mm][m.categoria] || 0) + m.importe;
+      const destino = m.tipo === 'Gasto' ? gastoMesCat : m.tipo === TIPO_EXTRA ? extraMesCat : null;
+      if (!destino) return;
+      destino[mm] = destino[mm] || {};
+      destino[mm][m.categoria] = (destino[mm][m.categoria] || 0) + m.importe;
     });
     const orden = (a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.fila - a.fila);
     const conFila = d.movimientos.map((m, fila) => Object.assign({ fila }, m));
-    const delMes = conFila.filter((m) => m.fecha.slice(0, 7) === mes && (m.tipo === 'Gasto' || m.tipo === 'Ingreso')).sort(orden);
+    const delMes = conFila.filter((m) => m.fecha.slice(0, 7) === mes && ['Gasto', 'Ingreso', TIPO_EXTRA].indexOf(m.tipo) >= 0).sort(orden);
     const porCobrar = conFila.filter((m) => m.tipo === TIPO_POR_COBRAR).sort(orden);
     const gastado = gastoMesCat[mes] || {};
     const categorias = d.categorias.map((c) => {
       const porMes = {};
-      Object.keys(gastoMesCat).forEach((m) => { porMes[m] = gastoMesCat[m][c.nombre] || 0; });
-      const acumulado = c.acumula ? saldoAcumulado(c.presupuesto, porMes, mesInicio, mes) : 0;
-      return { nombre: c.nombre, presupuestoBase: c.presupuesto, acumulado, presupuesto: redondear2(c.presupuesto + acumulado),
-        acumula: !!c.acumula, gastado: redondear2(gastado[c.nombre] || 0), palabras: c.palabras };
+      Object.keys(gastoMesCat).concat(Object.keys(extraMesCat)).forEach((m) => {
+        porMes[m] = ((gastoMesCat[m] || {})[c.nombre] || 0) - ((extraMesCat[m] || {})[c.nombre] || 0);
+      });
+      const modo = c.modoAcumula || (c.acumula ? 'todo' : 'no');
+      const acumulado = modo !== 'no' ? saldoAcumulado(c.presupuesto, porMes, mesInicio, mes, modo === 'negativo') : 0;
+      const extra = redondear2((extraMesCat[mes] || {})[c.nombre] || 0);
+      return { nombre: c.nombre, presupuestoBase: c.presupuesto, acumulado, extra, presupuesto: redondear2(c.presupuesto + acumulado + extra),
+        acumula: modo !== 'no', modoAcumula: modo, gastado: redondear2(gastado[c.nombre] || 0), palabras: c.palabras };
     });
     Object.keys(gastado).forEach((n) => {
       if (!d.categorias.some((c) => c.nombre === n)) {
@@ -94,7 +103,7 @@
       categorias,
       total: {
         presupuesto: redondear2(categorias.reduce((s, c) => s + c.presupuesto, 0)),
-        gastado: redondear2(delMes.filter((m) => m.tipo !== 'Ingreso').reduce((s, m) => s + m.importe, 0))
+        gastado: redondear2(delMes.filter((m) => m.tipo === 'Gasto').reduce((s, m) => s + m.importe, 0))
       },
       ingresos: redondear2(delMes.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + m.importe, 0)),
       movimientos: delMes.map(limpio),
