@@ -218,15 +218,19 @@ function raices(textoNorm) {
     .filter(Boolean).map(raiz);
 }
 
-/** ¿Aparece la secuencia de raíces `aguja` seguida dentro de `pajar`? */
-function contieneSecuencia(pajar, aguja) {
-  if (!aguja.length) return false;
+/** Posición donde empieza la secuencia de raíces `aguja` dentro de `pajar` (-1 si no está). */
+function posicionSecuencia(pajar, aguja) {
+  if (!aguja.length) return -1;
   for (var i = 0; i + aguja.length <= pajar.length; i++) {
     var j = 0;
     while (j < aguja.length && pajar[i + j] === aguja[j]) j++;
-    if (j === aguja.length) return true;
+    if (j === aguja.length) return i;
   }
-  return false;
+  return -1;
+}
+
+function contieneSecuencia(pajar, aguja) {
+  return posicionSecuencia(pajar, aguja) >= 0;
 }
 
 /** Busca la palabra clave más larga que aparezca en el texto (sin importar plural ni género). */
@@ -304,34 +308,68 @@ function modoAcumula(valor) {
   return 'no';
 }
 
-/** Categoría que se nombra en el texto por su nombre («caprichos», «vida social», «sara»…), no por sus palabras clave. */
-function categoriaNombrada(textoNorm, categorias) {
-  var texto = raices(textoNorm);
-  var mejor = null, peso = 0;
-  categorias.forEach(function (c) {
-    var nombre = normalizar(c.nombre).replace(/[^a-z0-9]+/g, ' ').trim();
-    var frases = [nombre].concat(nombre.split(' ').filter(function (p) { return p.length >= 4 && !contiene(PALABRAS_GENERICAS, p); }));
-    frases.forEach(function (f) {
-      if (f.length > peso && contieneSecuencia(texto, raices(f))) { peso = f.length; mejor = c.nombre; }
-    });
+/**
+ * Presupuesto que se nombra en el texto por su nombre («caprichos», «vida social», «sara», «fijos»…),
+ * no por sus palabras clave. Devuelve { nombre, inicio, fin } (posiciones en `raicesTexto`) o null.
+ */
+function categoriaNombrada(raicesTexto, categorias) {
+  var mejor = null;
+  (categorias || []).forEach(function (c) {
+    var palabras = normalizar(c.nombre).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+    // Cualquier trozo seguido del nombre: «vida social», «social», «sara»… (no palabras sueltas genéricas)
+    for (var i = 0; i < palabras.length; i++) {
+      for (var j = i + 1; j <= palabras.length; j++) {
+        var trozo = palabras.slice(i, j);
+        if (trozo.length === 1 && (trozo[0].length < 4 || contiene(PALABRAS_GENERICAS, trozo[0]))) continue;
+        var seq = trozo.map(raiz);
+        var pos = posicionSecuencia(raicesTexto, seq);
+        var largo = trozo.join(' ').length;
+        if (pos >= 0 && (!mejor || largo > mejor.largo)) mejor = { nombre: c.nombre, inicio: pos, fin: pos + seq.length, largo: largo };
+      }
+    }
   });
   return mejor;
 }
 
+var aRaices = function (lista) { return lista.map(raiz); };
+// Palabras que indican dinero extra (en raíz: extra/extras, plus, bonus).
+var RAICES_EXTRA = aRaices(['extra', 'plus', 'bonus', 'bonificacion']);
+// Verbos de «añadir a un presupuesto».
+var RAICES_VERBO_EXTRA = aRaices(['anade', 'anadir', 'anadele', 'anademe', 'suma', 'sumar', 'sumale', 'sumame', 'ingresa',
+  'ingresar', 'ingresale', 'aumenta', 'aumentar', 'aumentale', 'sube', 'subir', 'subele', 'mete', 'meter', 'metele', 'pon',
+  'poner', 'ponle', 'pasa', 'pasar', 'pasale', 'dale', 'darle', 'carga', 'cargar', 'cargale', 'recarga', 'recargar', 'recargale']);
+// Si aparece uno de estos, es un gasto aunque diga «extra» («gasto extra de 30 € en gasolina»).
+var RAICES_GASTO = ['gast', 'gastad', 'gasta', 'pagu', 'pagad', 'pago', 'compr', 'comprad', 'cuest', 'costad', 'cost'];
+
 /**
- * ¿Es dinero extra para un presupuesto? «400 € para gastar en caprichos», «150 € extra para vida social»,
- * «añade 400 a caprichos». Sin presupuesto nombrado, «para gastar» va a Caprichos.
+ * ¿Es dinero extra para un presupuesto? Entiende la idea, no una frase fija:
+ *  · «para gastar» (+ presupuesto, o Caprichos si no se dice): «400 € para gastar en caprichos»
+ *  · palabra de extra o verbo de añadir + presupuesto con «a / al / para» delante:
+ *    «400 € extras para caprichos», «400 € extra a caprichos», «métele 400 a caprichos»,
+ *    «suma 150 al presupuesto de vida social», «400 más para caprichos»
+ *  · «dinero extra» sin presupuesto: Caprichos
+ * Con un verbo de gasto («he gastado», «pagué», «compré»…) o el presupuesto con «de / en» delante
+ * («30 € extra de gasolina») sigue siendo un gasto normal.
  * Devuelve { categoria } (null si no hay a dónde) o null si no es un extra.
  */
 function detectarExtra(textoNorm, categorias) {
-  var t = ' ' + textoNorm + ' ';
-  var nombrada = categoriaNombrada(textoNorm, categorias);
-  var paraGastar = /\spara gastar\s/.test(t);
-  var masPara = /\s(extra|de mas|mas)\s/.test(t) && /\spara\s/.test(t);
-  var anade = /\s(anade|anadir|anadele|suma|sumar|sumale|ingresa|ingresar|aumenta|aumentar)\s/.test(t) && /\s(a|al|en)\s/.test(t);
-  if (!(paraGastar || ((masPara || anade) && nombrada))) return null;
+  var s = raices(textoNorm);
+  var destino = categoriaNombrada(s, categorias);
+  // Las palabras del propio nombre del presupuesto no cuentan («gastos fijos» no es un verbo de gasto).
+  var resto = destino ? s.slice(0, destino.inicio).concat(s.slice(destino.fin)) : s;
+  var hay = function (lista) { return resto.some(function (w) { return lista.indexOf(w) >= 0; }); };
   var caprichos = (categorias || []).filter(function (c) { return /^capricho/.test(normalizar(c.nombre)); })[0];
-  return { categoria: nombrada || (caprichos ? caprichos.nombre : null) };
+  var porDefecto = caprichos ? caprichos.nombre : null;
+
+  if (posicionSecuencia(s, ['para', 'gastar']) >= 0) return { categoria: destino ? destino.nombre : porDefecto };
+  if (hay(RAICES_GASTO)) return null;
+
+  var antes = destino ? s[destino.inicio - 1] : '';
+  var conPreposicion = !!destino && (['a', 'al', 'para'].indexOf(antes) >= 0 ||
+    (antes === 'de' && s[destino.inicio - 2] === raiz('presupuesto')));
+  if (conPreposicion && (hay(RAICES_EXTRA) || hay(['mas']) || hay(RAICES_VERBO_EXTRA))) return { categoria: destino.nombre };
+  if (!destino && hay([raiz('dinero')]) && hay(RAICES_EXTRA)) return { categoria: porDefecto };
+  return null;
 }
 
 var PATRON_POR_COBRAR = '(?:^|[\\s,.;:]+)(?:(?:y\\s+)?(?:pendiente\\s+de|a|por)\\s+cobrar(?:\\s+(?:de|a)\\s+la\\s+empresa)?' +
